@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quasilattice"
+version = "0.4.0"
+authors = [
+  { name="Kaedon Cleland-Host", email="kaedon@kaedon.net" },
+]
+description = "A data analysis, knowledge base, journaling and note taking system built with FastAPI."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/Dracentis/QuasiLattice"
+Issues = "https://github.com/Dracentis/QuasiLattice/issues"
+
+[project.scripts]
+quasilattice = "quasilattice.cli:main"

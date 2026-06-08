@@ -1,0 +1,9 @@
+config.yaml
+quasilatticedata.db
+files/
+build/
+.pytest_cache/
+.vscode/
+__pycache__/
+dist/
+.venv/
