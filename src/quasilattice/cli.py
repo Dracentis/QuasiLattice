@@ -282,11 +282,24 @@ def status_systemd_service(system: bool = False, verbose: bool = False):
             if verbose:
                 raise e
 
+def _launchd_service_loaded() -> bool:
+    """
+    Return True if the launchd service is currently loaded/running.
+    """
+    result = subprocess.run(
+        ["launchctl", "list", SERVICE_NAME],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+    )
+    return result.returncode == 0
+ 
 def setup_launchd_service(system: bool = False, verbose: bool = False):
-    if system: # TODO: add support for system-wide (daemon) service setup.
+    if system:
         print("System-wide (daemon) service setup is not supported on macOS.")
         print("Please run without --system.")
         return
+    log_dir = pathlib.Path.home() / ".quasilattice" # TODO: load from config
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "quasilattice.log"
     plist_content = f"""
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -306,18 +319,34 @@ def setup_launchd_service(system: bool = False, verbose: bool = False):
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>StandardOutPath</key>
+    <string>{log_path}</string>
+    <key>StandardErrorPath</key>
+    <string>{log_path}</string>
 </dict>
 </plist>
 """
     plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    if verbose:
+        print("Installing service at:",plist_path)
+        print("Logging to:",log_path)
     plist_path.write_text(plist_content)
     stdout = None if verbose else subprocess.DEVNULL
-    subprocess.run(["launchctl", "load", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+    if _launchd_service_loaded():
+        subprocess.run(["launchctl", "unload", str(plist_path)], check=False, stdout=stdout, stderr=stdout)
+    try:
+        subprocess.run(["launchctl", "load", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+    except Exception as e:
+        print("Failed to setup the QuasiLattice service.")
+        if verbose:
+            raise e
+        return
     if verbose:
         print("QuasiLattice service setup successfully!")
-
+ 
 def remove_launchd_service(system: bool = False, verbose: bool = False):
-    if system: # TODO: add support for system-wide (daemon) service removal.
+    if system:
         print("System-wide (daemon) service removal is not supported on macOS.")
         print("Please run without --system.")
         return
@@ -329,62 +358,86 @@ def remove_launchd_service(system: bool = False, verbose: bool = False):
     if verbose:
         print("Removing service from:",plist_path)
     stdout = None if verbose else subprocess.DEVNULL
-    subprocess.run(["launchctl", "unload", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+    if _launchd_service_loaded():
+        try:
+            subprocess.run(["launchctl", "unload", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+        except Exception as e:
+            print("Warning: failed to unload the QuasiLattice service before removing it.")
+            if verbose:
+                raise e
     plist_path.unlink()
     if verbose:
         print("QuasiLattice service removed.")
-
+ 
 def start_launchd_service(system: bool = False, verbose: bool = False):
-    if system: # TODO: add support for system-wide (daemon) service management.
+    if system:
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
     plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
+    if not plist_path.exists():
+        print("QuasiLattice service is not setup.")
+        print("You can install it by running:")
+        print("  quasilattice setup")
+        return
+    if _launchd_service_loaded():
+        if verbose:
+            print("QuasiLattice service is already running.")
+        return
     stdout = None if verbose else subprocess.DEVNULL
     try:
         subprocess.run(["launchctl", "load", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
     except Exception as e:
-        print("QuasiLattice service is not setup.")
-        print("You can install it by running:")
-        print("  quasilattice setup")
+        print("Failed to start QuasiLattice service.")
         if verbose:
             raise e
         return
     if verbose:
         print("QuasiLattice service started.")
-
+ 
 def stop_launchd_service(system: bool = False, verbose: bool = False):
-    if system: # TODO: add support for system-wide (daemon) service management.
+    if system:
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
     plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
+    if not plist_path.exists():
+        print("QuasiLattice service is not setup.")
+        print("You can install it by running:")
+        print("  quasilattice setup")
+        return
+    if not _launchd_service_loaded():
+        if verbose:
+            print("QuasiLattice service is already stopped.")
+        return
     stdout = None if verbose else subprocess.DEVNULL
     try:
         subprocess.run(["launchctl", "unload", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
     except Exception as e:
-        print("QuasiLattice service is not setup.")
-        print("You can install it by running:")
-        print("  quasilattice setup")
+        print("Failed to stop QuasiLattice service.")
         if verbose:
             raise e
         return
     if verbose:
         print("QuasiLattice service stopped.")
-
+ 
 def status_launchd_service(system: bool = False, verbose: bool = False):
-    if system: # TODO: add support for system-wide (daemon) service management.
+    if system:
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
-    try:
-        subprocess.run(["launchctl", "list", SERVICE_NAME])
-    except Exception as e:
+    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
+    if not plist_path.exists():
         print("QuasiLattice service is not setup.")
         print("You can install it by running:")
         print("  quasilattice setup")
-        if verbose:
-            raise e
+        return
+    result = subprocess.run(["launchctl", "list", SERVICE_NAME], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        print("QuasiLattice service is setup but not currently running.")
+        return
+    print(result.stdout.strip())
+
 
 def get_windows_executable() -> str:
     """
