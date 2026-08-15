@@ -282,12 +282,19 @@ def status_systemd_service(system: bool = False, verbose: bool = False):
             if verbose:
                 raise e
 
+def _launchd_domain() -> str:
+    return f"gui/{os.getuid()}"
+ 
+def _launchd_target() -> str:
+    return f"{_launchd_domain()}/{SERVICE_NAME}"
+ 
 def _launchd_service_loaded() -> bool:
     """
-    Return True if the launchd service is currently loaded/running.
+    Return True if the launchd service is currently bootstrapped into the
+    user's GUI domain.
     """
     result = subprocess.run(
-        ["launchctl", "list", SERVICE_NAME],
+        ["launchctl", "print", _launchd_target()],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
     )
     return result.returncode == 0
@@ -333,12 +340,19 @@ def setup_launchd_service(system: bool = False, verbose: bool = False):
         print("Logging to:",log_path)
     plist_path.write_text(plist_content)
     stdout = None if verbose else subprocess.DEVNULL
+    domain = _launchd_domain()
+    target = _launchd_target()
     if _launchd_service_loaded():
-        subprocess.run(["launchctl", "unload", str(plist_path)], check=False, stdout=stdout, stderr=stdout)
+        subprocess.run(["launchctl", "bootout", target], check=False, stdout=stdout, stderr=stdout)
     try:
-        subprocess.run(["launchctl", "load", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
-    except Exception as e:
+        subprocess.run(["launchctl", "bootstrap", domain, str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+        # `enable` clears any persistent "disabled" override left behind by a
+        # prior `launchctl disable`, so the service isn't silently skipped.
+        subprocess.run(["launchctl", "enable", target], check=False, stdout = stdout, stderr = stdout)
+    except subprocess.CalledProcessError as e:
         print("Failed to setup the QuasiLattice service.")
+        if "Could not find domain for" in str(e):
+            print("Make sure you are logged into a GUI session (not just SSH'd in) and try again.")
         if verbose:
             raise e
         return
@@ -360,7 +374,7 @@ def remove_launchd_service(system: bool = False, verbose: bool = False):
     stdout = None if verbose else subprocess.DEVNULL
     if _launchd_service_loaded():
         try:
-            subprocess.run(["launchctl", "unload", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+            subprocess.run(["launchctl", "bootout", _launchd_target()], check=True, stdout = stdout, stderr = stdout)
         except Exception as e:
             print("Warning: failed to unload the QuasiLattice service before removing it.")
             if verbose:
@@ -380,18 +394,25 @@ def start_launchd_service(system: bool = False, verbose: bool = False):
         print("You can install it by running:")
         print("  quasilattice setup")
         return
-    if _launchd_service_loaded():
-        if verbose:
-            print("QuasiLattice service is already running.")
-        return
     stdout = None if verbose else subprocess.DEVNULL
-    try:
-        subprocess.run(["launchctl", "load", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
-    except Exception as e:
-        print("Failed to start QuasiLattice service.")
-        if verbose:
-            raise e
-        return
+    target = _launchd_target()
+    if _launchd_service_loaded():
+        try:
+            subprocess.run(["launchctl", "kickstart", "-k", target], check=True, stdout = stdout, stderr = stdout)
+        except Exception as e:
+            print("Failed to start QuasiLattice service.")
+            if verbose:
+                raise e
+            return
+    else:
+        try:
+            subprocess.run(["launchctl", "bootstrap", _launchd_domain(), str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+            subprocess.run(["launchctl", "enable", target], check=False, stdout = stdout, stderr = stdout)
+        except Exception as e:
+            print("Failed to start QuasiLattice service.")
+            if verbose:
+                raise e
+            return
     if verbose:
         print("QuasiLattice service started.")
  
@@ -412,7 +433,7 @@ def stop_launchd_service(system: bool = False, verbose: bool = False):
         return
     stdout = None if verbose else subprocess.DEVNULL
     try:
-        subprocess.run(["launchctl", "unload", str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+        subprocess.run(["launchctl", "bootout", _launchd_target()], check=True, stdout = stdout, stderr = stdout)
     except Exception as e:
         print("Failed to stop QuasiLattice service.")
         if verbose:
@@ -432,12 +453,11 @@ def status_launchd_service(system: bool = False, verbose: bool = False):
         print("You can install it by running:")
         print("  quasilattice setup")
         return
-    result = subprocess.run(["launchctl", "list", SERVICE_NAME], capture_output=True, text=True, check=False)
+    result = subprocess.run(["launchctl", "print", _launchd_target()], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print("QuasiLattice service is setup but not currently running.")
         return
     print(result.stdout.strip())
-
 
 def get_windows_executable() -> str:
     """
