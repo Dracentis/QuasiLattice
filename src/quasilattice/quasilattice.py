@@ -1,3 +1,3 @@
-def myfunc():
+def my_func():
     print("myfunc")
-    return "hello"
+    return "hello2"

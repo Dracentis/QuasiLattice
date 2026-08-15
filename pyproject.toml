@@ -11,6 +11,10 @@ authors = [
 description = "A data analysis, knowledge base, journaling and note taking system built with FastAPI."
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -22,5 +26,11 @@ license-files = ["LICEN[CS]E*"]
 Homepage = "https://github.com/Dracentis/QuasiLattice"
 Issues = "https://github.com/Dracentis/QuasiLattice/issues"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/quasilattice"]
+
 [project.scripts]
 quasilattice = "quasilattice.cli:main"
+
+[tool.fastapi]
+entrypoint = "quasilattice.api:app"
