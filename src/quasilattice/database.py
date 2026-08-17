@@ -1,9 +1,11 @@
+import os
 import sqlite3 # sqlite database
 
 def databasefunc():
     print("database function1!")
 
 def createDatabase():
+    config = {}
     try:
         os.makedirs(config["DATABASE_FOLDER"], exist_ok=True)
     except:
@@ -22,7 +24,7 @@ def createDatabase():
     sqlCursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='users';""")
     if (sqlCursor.fetchone() == None):
         sqlCursor.execute("CREATE TABLE users(username TEXT PRIMARY KEY, passwordHash TEXT, isAdmin INTEGER)")
-        sqlCursor.execute("INSERT OR REPLACE INTO users VALUES(?, ?, ?) ", ("admin",werkzeug.security.generate_password_hash("admin"),True))
+        #sqlCursor.execute("INSERT OR REPLACE INTO users VALUES(?, ?, ?) ", ("admin",werkzeug.security.generate_password_hash("admin"),True))
     # create keys table
     sqlCursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='keys';""")
     if (sqlCursor.fetchone() == None):

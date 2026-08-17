@@ -1,11 +1,10 @@
-from . import __version__
+import quasilattice
 import os
 import sys
 import platform
 import argparse
 import shutil
 import subprocess
-import pathlib
 import getpass
 
 SERVICE_NAME = "quasilattice"
@@ -15,10 +14,11 @@ def run(args):
     Run the QuasiLattice in the foreground.
     """
     import uvicorn
+    quasilattice.init()
     if sys.stdout is None or sys.stderr is None:
-        log_dir = pathlib.Path.home() / ".quasilattice" # TODO: load from config
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = open(log_dir / "quasilattice.log", "a", buffering=1)
+        log_dir = os.path.join(os.path.expanduser("~"), ".quasilattice")
+        os.makedirs(os.path.dirname(log_dir), exist_ok=True)
+        log_file = open(os.path.join(log_dir,"quasilattice.log"), "a", buffering=1)
         sys.stdout = log_file
         sys.stderr = log_file
     if not args.host:
@@ -33,10 +33,9 @@ def setup(args):
     """
     system = platform.system()
     if args.verbose:
-        print("QuasiLattice Version:",__version__)
+        print("QuasiLattice Version:",quasilattice.__version__)
         print("Operating System:",system)
     if system == "Linux":
-        # TODO: Add support for other init systems?
         if args.system and os.geteuid() != 0:
             print("System service installation requires root privileges.")
             print("Please run:")
@@ -45,7 +44,9 @@ def setup(args):
         if (shutil.which("systemctl") is not None):
             setup_systemd_service(args.system,args.verbose)
         else:
-            raise RuntimeError("systemd is not installed.")
+            print("systemd is not installed.")
+            print("Quasilattice can still be run manually with:")
+            print("  quasilattice run")
     elif system == "Windows":
         setup_windows_service(args.system,args.verbose)
     elif system == "Darwin":
@@ -59,10 +60,9 @@ def remove(args):
     """
     system = platform.system()
     if args.verbose:
-        print("QuasiLattice Version:",__version__)
+        print("QuasiLattice Version:",quasilattice.__version__)
         print("Operating System:",system)
     if system == "Linux":
-        # TODO: Add support for other init systems?
         if args.system and os.geteuid() != 0:
             print("System service removal requires root privileges.")
             print("Please run:")
@@ -71,7 +71,9 @@ def remove(args):
         if (shutil.which("systemctl") is not None):
             remove_systemd_service(args.system,args.verbose)
         else:
-            raise RuntimeError("systemd is not installed.")
+            print("systemd is not installed.")
+            print("Quasilattice can still be run manually with:")
+            print("  quasilattice run")
     elif system == "Windows":
         remove_windows_service(args.system,args.verbose)
     elif system == "Darwin":
@@ -82,14 +84,15 @@ def remove(args):
 def start(args):
     system = platform.system()
     if args.verbose:
-        print("QuasiLattice Version:",__version__)
+        print("QuasiLattice Version:",quasilattice.__version__)
         print("Operating System:",system)
     if system == "Linux":
-        # TODO: Add support for other init systems?
         if (shutil.which("systemctl") is not None):
             start_systemd_service(args.system,args.verbose)
         else:
-            raise RuntimeError("systemd is not installed.")
+            print("systemd is not installed.")
+            print("Quasilattice can still be run manually with:")
+            print("  quasilattice run")
     elif system == "Windows":
         start_windows_service(args.system,args.verbose)
     elif system == "Darwin":
@@ -100,14 +103,15 @@ def start(args):
 def stop(args):
     system = platform.system()
     if args.verbose:
-        print("QuasiLattice Version:",__version__)
+        print("QuasiLattice Version:",quasilattice.__version__)
         print("Operating System:",system)
     if system == "Linux":
-        # TODO: Add support for other init systems?
         if (shutil.which("systemctl") is not None):
             stop_systemd_service(args.system,args.verbose)
         else:
-            raise RuntimeError("systemd is not installed.")
+            print("systemd is not installed.")
+            print("Quasilattice can still be run manually with:")
+            print("  quasilattice run")
     elif system == "Windows":
         stop_windows_service(args.system,args.verbose)
     elif system == "Darwin":
@@ -118,14 +122,15 @@ def stop(args):
 def status(args):
     system = platform.system()
     if args.verbose:
-        print("QuasiLattice Version:",__version__)
+        print("QuasiLattice Version:",quasilattice.__version__)
         print("Operating System:",system)
     if system == "Linux":
-        # TODO: Add support for other init systems?
         if (shutil.which("systemctl") is not None):
             status_systemd_service(args.system,args.verbose)
         else:
-            raise RuntimeError("systemd is not installed.")
+            print("systemd is not installed.")
+            print("Quasilattice can still be run manually with:")
+            print("  quasilattice run")
     elif system == "Windows":
         status_windows_service(args.system,args.verbose)
     elif system == "Darwin":
@@ -136,16 +141,17 @@ def status(args):
 def setup_systemd_service(system: bool = False, verbose: bool = False):
     if system:
         user_line: str = ""
-        service_path = pathlib.Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
+        service_path = os.path.join("/etc","systemd","system",f"{SERVICE_NAME}.service")
         systemctl = ["systemctl"]
     else:
         user_line: str = "User="+getpass.getuser()+"\n"
-        service_path = pathlib.Path(f"{pathlib.Path.home()}/.config/systemd/user/{SERVICE_NAME}.service")
+        service_path = os.path.join(os.path.expanduser("~"),".config","systemd","user",f"{SERVICE_NAME}.service")
         systemctl = ["systemctl", "--user"]
     if verbose:
         print("Installing service at:",service_path)
-    service_path.parent.mkdir(parents=True, exist_ok=True)
-    service_path.write_text(f"""
+    os.makedirs(os.path.dirname(service_path), exist_ok=True)
+    with open(service_path, "w") as service_file: 
+        service_file.write(f"""
 [Unit]
 Description=QuasiLattice Background Service
 After=network.target
@@ -167,21 +173,21 @@ WantedBy={"multi-user.target" if system else "default.target"}
         print("QuasiLattice service setup successfully!")
 
 def remove_systemd_service(system: bool = False, verbose: bool = False):
-    system_service_path = pathlib.Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
-    user_service_path = pathlib.Path(f"{pathlib.Path.home()}/.config/systemd/user/{SERVICE_NAME}.service")
+    system_service_path = os.path.join("/etc","systemd","system",f"{SERVICE_NAME}.service")
+    user_service_path = os.path.join(os.path.expanduser("~"),".config","systemd","user",f"{SERVICE_NAME}.service")
     if system:
         service_path = system_service_path
         systemctl = ["systemctl"]
     else:
         service_path = user_service_path
         systemctl = ["systemctl", "--user"]
-    if not service_path.exists():
+    if not os.path.isfile(service_path):
         print("No service found at",service_path)
-        if system_service_path.exists():
+        if os.path.isfile(system_service_path):
             print("But a service was discovered at",system_service_path)
             print("To remove it, run:")
             print("  quasilattice remove --system")
-        elif user_service_path.exists():
+        elif os.path.isfile(user_service_path):
             print("But a service was discovered at",user_service_path)
             print("To remove it, run:")
             print("  quasilattice remove")
@@ -193,7 +199,7 @@ def remove_systemd_service(system: bool = False, verbose: bool = False):
     stdout = None if verbose else subprocess.DEVNULL
     subprocess.run([*systemctl, "stop", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
     subprocess.run([*systemctl, "disable", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
-    service_path.unlink()
+    os.unlink(service_path)
     subprocess.run([*systemctl, "daemon-reload"], check=True, stdout = stdout, stderr = stdout)
     if verbose:
         print("QuasiLattice service removed.")
@@ -216,6 +222,7 @@ def start_systemd_service(system: bool = False, verbose: bool = False):
                 print("Failed to start QuasiLattice service.")
                 if verbose:
                     raise e
+                return
     else:
         try:
             subprocess.run([*systemctl, "start", SERVICE_NAME], check=True)
@@ -245,6 +252,7 @@ def stop_systemd_service(system: bool = False, verbose: bool = False):
                 print("Failed to stop QuasiLattice service.")
                 if verbose:
                     raise e
+                return
     else:
         try:
             subprocess.run([*systemctl, "stop", SERVICE_NAME], check=True)
@@ -304,9 +312,9 @@ def setup_launchd_service(system: bool = False, verbose: bool = False):
         print("System-wide (daemon) service setup is not supported on macOS.")
         print("Please run without --system.")
         return
-    log_dir = pathlib.Path.home() / ".quasilattice" # TODO: load from config
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "quasilattice.log"
+    log_dir = os.path.join(os.path.expanduser("~"), ".quasilattice") # TODO: load from config
+    os.makedirs(os.path.dirname(log_dir), exist_ok=True)
+    log_path = os.path.join(log_dir,"quasilattice.log")
     plist_content = f"""
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -333,12 +341,13 @@ def setup_launchd_service(system: bool = False, verbose: bool = False):
 </dict>
 </plist>
 """
-    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
-    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
     if verbose:
         print("Installing service at:",plist_path)
         print("Logging to:",log_path)
-    plist_path.write_text(plist_content)
+    os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+    with open(plist_path, "w") as plist_file: 
+        plist_file.write(plist_content)
     stdout = None if verbose else subprocess.DEVNULL
     domain = _launchd_domain()
     target = _launchd_target()
@@ -364,8 +373,8 @@ def remove_launchd_service(system: bool = False, verbose: bool = False):
         print("System-wide (daemon) service removal is not supported on macOS.")
         print("Please run without --system.")
         return
-    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
-    if not plist_path.exists():
+    plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
+    if not os.path.isfile(plist_path):
         print("No service found at",plist_path)
         print("Nothing to remove.")
         return
@@ -376,10 +385,10 @@ def remove_launchd_service(system: bool = False, verbose: bool = False):
         try:
             subprocess.run(["launchctl", "bootout", _launchd_target()], check=True, stdout = stdout, stderr = stdout)
         except Exception as e:
-            print("Warning: failed to unload the QuasiLattice service before removing it.")
+            print("Warning: failed to unload the QuasiLattice service.")
             if verbose:
                 raise e
-    plist_path.unlink()
+    os.unlink(plist_path)
     if verbose:
         print("QuasiLattice service removed.")
  
@@ -388,8 +397,8 @@ def start_launchd_service(system: bool = False, verbose: bool = False):
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
-    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
-    if not plist_path.exists():
+    plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
+    if not os.path.isfile(plist_path):
         print("QuasiLattice service is not setup.")
         print("You can install it by running:")
         print("  quasilattice setup")
@@ -421,8 +430,8 @@ def stop_launchd_service(system: bool = False, verbose: bool = False):
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
-    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
-    if not plist_path.exists():
+    plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
+    if not os.path.isfile(plist_path):
         print("QuasiLattice service is not setup.")
         print("You can install it by running:")
         print("  quasilattice setup")
@@ -447,8 +456,8 @@ def status_launchd_service(system: bool = False, verbose: bool = False):
         print("System-wide (daemon) service management is not supported on macOS.")
         print("Please run without --system.")
         return
-    plist_path = pathlib.Path.home() / "Library/LaunchAgents" / f"{SERVICE_NAME}.plist"
-    if not plist_path.exists():
+    plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
+    if not os.path.isfile(plist_path):
         print("QuasiLattice service is not setup.")
         print("You can install it by running:")
         print("  quasilattice setup")
@@ -465,9 +474,8 @@ def get_windows_executable() -> str:
     runs without popping up a console window. Falls back to sys.executable
     if pythonw.exe can't be found.
     """
-    exe_path = pathlib.Path(sys.executable)
-    pythonw_path = exe_path.parent / "pythonw.exe"
-    if pythonw_path.exists():
+    pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    if os.path.isfile(pythonw_path):
         return str(pythonw_path)
     return sys.executable
 
@@ -595,7 +603,7 @@ def main():
     run_subparser.set_defaults(func=run)
     run_subparser.add_argument("-v", "--verbose", action="store_true", help="Provide additional output.")
     run_subparser.add_argument("--host",help="Host address to bind to.")
-    run_subparser.add_argument("--port",help="Port to bind to.")
+    run_subparser.add_argument("--port",type=int,help="Port to bind to.")
 
     service_commands = {"setup":setup,"remove":remove,"start":start,"stop":stop,"status":status}
     for service_command, command_func in service_commands.items():
