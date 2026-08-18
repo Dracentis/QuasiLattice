@@ -12,6 +12,15 @@ SERVICE_NAME = "quasilattice"
 
 logger = logging.getLogger("quasilattice")
 
+def _subprocess_run_logged(cmd, check=False, **kwargs):
+    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    output = "\n".join(s.strip() for s in (result.stdout, result.stderr) if s and s.strip())
+    if output:
+        logger.debug(output)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    return result
+
 def run(args):
     """
     Run the QuasiLattice in the foreground.
@@ -171,10 +180,9 @@ RestartSec=5
 [Install]
 WantedBy={"multi-user.target" if system else "default.target"}
 """)
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
-    subprocess.run([*systemctl, "daemon-reload"], check=True, stdout=stdout, stderr = stdout)
-    subprocess.run([*systemctl, "enable", SERVICE_NAME], check=True, stdout=stdout, stderr = stdout)
-    subprocess.run([*systemctl, "start", SERVICE_NAME], check=True, stdout=stdout, stderr = stdout)
+    _subprocess_run_logged([*systemctl, "daemon-reload"], check=True)
+    _subprocess_run_logged([*systemctl, "enable", SERVICE_NAME], check=True)
+    _subprocess_run_logged([*systemctl, "start", SERVICE_NAME], check=True)
     if logger.getEffectiveLevel() <= 10:
         logger.info("QuasiLattice systemd service setup successfully!")
 
@@ -199,11 +207,10 @@ def remove_systemd_service(system: bool = False):
             logger.info("Nothing to remove.")
         return
     logger.debug(f"Removing service from: {service_path}")
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
-    subprocess.run([*systemctl, "stop", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
-    subprocess.run([*systemctl, "disable", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
+    _subprocess_run_logged([*systemctl, "stop", SERVICE_NAME], check=True)
+    _subprocess_run_logged([*systemctl, "disable", SERVICE_NAME], check=True)
     os.unlink(service_path)
-    subprocess.run([*systemctl, "daemon-reload"], check=True, stdout = stdout, stderr = stdout)
+    _subprocess_run_logged([*systemctl, "daemon-reload"], check=True)
     logger.debug("QuasiLattice service removed.")
 
 def start_systemd_service(system: bool = False):
@@ -218,7 +225,7 @@ def start_systemd_service(system: bool = False):
             return
         else:
             try:
-                subprocess.run([*systemctl_inverted, "start", SERVICE_NAME], check=True)
+                _subprocess_run_logged([*systemctl_inverted, "start", SERVICE_NAME], check=True)
             except Exception as e:
                 logger.error("Failed to start QuasiLattice service.")
                 if logger.getEffectiveLevel() <= 10:
@@ -226,7 +233,7 @@ def start_systemd_service(system: bool = False):
                 return
     else:
         try:
-            subprocess.run([*systemctl, "start", SERVICE_NAME], check=True)
+            _subprocess_run_logged([*systemctl, "start", SERVICE_NAME], check=True)
         except Exception as e:
             logger.error("Failed to start QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -246,7 +253,7 @@ def stop_systemd_service(system: bool = False):
             return
         else:
             try:
-                subprocess.run([*systemctl_inverted, "stop", SERVICE_NAME], check=True)
+                _subprocess_run_logged([*systemctl_inverted, "stop", SERVICE_NAME], check=True)
             except Exception as e:
                 logger.error("Failed to stop QuasiLattice service.")
                 if logger.getEffectiveLevel() <= 10:
@@ -254,7 +261,7 @@ def stop_systemd_service(system: bool = False):
                 return
     else:
         try:
-            subprocess.run([*systemctl, "stop", SERVICE_NAME], check=True)
+            _subprocess_run_logged([*systemctl, "stop", SERVICE_NAME], check=True)
         except Exception as e:
             logger.error("Failed to stop QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -274,14 +281,16 @@ def status_systemd_service(system: bool = False):
             return
         else:
             try:
-                subprocess.run([*systemctl_inverted, "--no-pager", "-l", "status", SERVICE_NAME], check=False)
+                result = subprocess.run([*systemctl_inverted, "--no-pager", "-l", "status", SERVICE_NAME], capture_output=True, text=True, check=False)
+                logger.info(result.stdout.strip())
             except Exception as e:
                 logger.error("Failed to check status of QuasiLattice service.")
                 if logger.getEffectiveLevel() <= 10:
                     raise e
     else:
         try:
-            subprocess.run([*systemctl, "--no-pager", "-l", "status", SERVICE_NAME], check=False)
+            result = subprocess.run([*systemctl, "--no-pager", "-l", "status", SERVICE_NAME], capture_output=True, text=True, check=False)
+            logger.info(result.stdout.strip())
         except Exception as e:
             logger.error("Failed to check status of QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -336,16 +345,15 @@ def setup_launchd_service(system: bool = False):
     os.makedirs(os.path.dirname(plist_path), exist_ok=True)
     with open(plist_path, "w") as plist_file: 
         plist_file.write(plist_content)
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     domain = _launchd_domain()
     target = _launchd_target()
     if _launchd_service_loaded():
-        subprocess.run(["launchctl", "bootout", target], check=False, stdout=stdout, stderr=stdout)
+        _subprocess_run_logged(["launchctl", "bootout", target], check=False)
     try:
-        subprocess.run(["launchctl", "bootstrap", domain, str(plist_path)], check=True, stdout = stdout, stderr = stdout)
+        _subprocess_run_logged(["launchctl", "bootstrap", domain, str(plist_path)], check=True)
         # `enable` clears any persistent "disabled" override left behind by a
         # prior `launchctl disable`, so the service isn't silently skipped.
-        subprocess.run(["launchctl", "enable", target], check=False, stdout = stdout, stderr = stdout)
+        _subprocess_run_logged(["launchctl", "enable", target], check=False)
     except subprocess.CalledProcessError as e:
         logger.error("Failed to setup the QuasiLattice service.")
         if "Could not find domain for" in str(e):
@@ -366,10 +374,9 @@ def remove_launchd_service(system: bool = False):
         logger.info("Nothing to remove.")
         return
     logger.debug(f"Removing service from: {plist_path}")
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     if _launchd_service_loaded():
         try:
-            subprocess.run(["launchctl", "bootout", _launchd_target()], check=True, stdout = stdout, stderr = stdout)
+            _subprocess_run_logged(["launchctl", "bootout", _launchd_target()], check=True)
         except Exception as e:
             logger.error("Failed to unload the QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -387,11 +394,10 @@ def start_launchd_service(system: bool = False):
         logger.error("QuasiLattice service is not setup.")
         logger.info("You can install it by running: quasilattice setup")
         return
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     target = _launchd_target()
     if _launchd_service_loaded():
         try:
-            subprocess.run(["launchctl", "kickstart", "-k", target], check=True, stdout = stdout, stderr = stdout)
+            _subprocess_run_logged(["launchctl", "kickstart", "-k", target], check=True)
         except Exception as e:
             logger.error("Failed to start QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -399,8 +405,8 @@ def start_launchd_service(system: bool = False):
             return
     else:
         try:
-            subprocess.run(["launchctl", "bootstrap", _launchd_domain(), str(plist_path)], check=True, stdout = stdout, stderr = stdout)
-            subprocess.run(["launchctl", "enable", target], check=False, stdout = stdout, stderr = stdout)
+            _subprocess_run_logged(["launchctl", "bootstrap", _launchd_domain(), str(plist_path)], check=True)
+            _subprocess_run_logged(["launchctl", "enable", target], check=False)
         except Exception as e:
             logger.error("Failed to start QuasiLattice service.")
             if logger.getEffectiveLevel() <= 10:
@@ -421,9 +427,8 @@ def stop_launchd_service(system: bool = False):
     if not _launchd_service_loaded():
         logger.debug("QuasiLattice service is already stopped.")
         return
-    stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     try:
-        subprocess.run(["launchctl", "bootout", _launchd_target()], check=True, stdout = stdout, stderr = stdout)
+        _subprocess_run_logged(["launchctl", "bootout", _launchd_target()], check=True)
     except Exception as e:
         logger.error("Failed to stop QuasiLattice service.")
         if logger.getEffectiveLevel() <= 10:

@@ -6,6 +6,8 @@ import logging.handlers
 import threading
 import tomllib
 
+from . import database
+
 config = {}
 config_path = os.path.expanduser("~/.quasilattice/config.toml")
 
@@ -13,8 +15,14 @@ sync_thread = None
 last_sync_time = time.time()
 
 logger = logging.getLogger("quasilattice")
+logger.setLevel(20)
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
+logger.addHandler(stderr_handler)
 
-class __LogFormatter(logging.Formatter):
+class _LogFormatter(logging.Formatter):
 
     LEVEL_COLORS = {
         logging.DEBUG: "\033[36m",     # cyan
@@ -68,7 +76,7 @@ def init(config_path: str | None = None, log_level: int | None = None, log_path:
         logger.removeHandler(handler)
     if config["logging"]["log_to_stderr"]:
         stderr_handler = logging.StreamHandler(sys.stderr)
-        stderr_handler.setFormatter(__LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
+        stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
         logger.addHandler(stderr_handler)
     if config["logging"]["log_to_file"]:
         log_dir = os.path.dirname(config["logging"]["log_path"])
@@ -90,6 +98,12 @@ def init(config_path: str | None = None, log_level: int | None = None, log_path:
         logger.info(f"No config file found. Created default config at {config_path}")
     else:
         logger.debug(f"Config file successfully loaded from {config_path}")
+
+    # create database
+    database.create_database()
+
+    # create files directory
+    os.makedirs(config["quasilattice"]["files_dir"], exist_ok=True)
 
     # TODO: load plugins here
 
