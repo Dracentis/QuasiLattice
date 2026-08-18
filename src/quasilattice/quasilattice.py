@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import logging
+import logging.handlers
 import threading
 import tomllib
 
@@ -36,7 +37,7 @@ class __LogFormatter(logging.Formatter):
             record.levelname = original_levelname
 
 
-def init(config_path: str | None = None, log_level: str | None = None, log_path: str | None = None):
+def init(config_path: str | None = None, log_level: int | None = None, log_path: str | None = None):
     if config_path is None:
         if os.path.isdir("/etc/quasilattice") and os.path.isfile("/etc/quasilattice/config.toml"):
             config_path = "/etc/quasilattice/config.toml"
@@ -73,9 +74,11 @@ def init(config_path: str | None = None, log_level: str | None = None, log_path:
         log_dir = os.path.dirname(config["logging"]["log_path"])
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-        file_handler = logging.RotatingFileHandler(config["logging"]["log_path"],
-                                                   maxBytes=config["logging"]["max_log_file_size_bytes"],
-                                                   backupCount=config["logging"]["log_file_backup_count"],)
+        file_handler = logging.handlers.RotatingFileHandler(
+            config["logging"]["log_path"],
+            maxBytes=config["logging"]["max_log_file_size_bytes"],
+            backupCount=config["logging"]["log_file_backup_count"],
+        )
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: \t%(message)s"))
         logger.addHandler(file_handler)
     for uv_logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
@@ -134,6 +137,14 @@ def validate_config():
         config["logging"] = {}
     if "log_level" not in config["logging"]:
         config["logging"]["log_level"] = 3
+    if "log_to_file" not in config["logging"]:
+        config["logging"]["log_to_file"] = True
+    if "log_to_stderr" not in config["logging"]:
+        config["logging"]["log_to_stderr"] = True
+    if "max_log_file_size_bytes" not in config["logging"]:
+        config["logging"]["max_log_file_size_bytes"] = 10485760
+    if "log_file_backup_count" not in config["logging"]:
+        config["logging"]["log_file_backup_count"] = 3
     if "log_path" not in config["logging"]:
         config["logging"]["log_path"] = os.path.join(os.path.dirname(config_path), "quasilattice.log")
 

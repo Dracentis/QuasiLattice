@@ -25,137 +25,125 @@ def setup(args):
     """
     Setup the QuasiLattice background service.
     """
-    if args.log_level is not None:
-        logger.setLevel(60 - args.log_level*10)
-    if args.debug:
-        logger.setLevel(10)
+    quasilattice.init(
+        config_path=args.config_path,
+        log_level=5 if args.debug else args.log_level,
+    )
     system = platform.system()
-    logger.debug("QuasiLattice Version:",quasilattice.__version__)
-    logger.debug("Operating System:",system)
+    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if args.system and os.geteuid() != 0:
             logger.error("System service installation requires root privileges.")
-            logger.info("Please run:")
-            logger.info("  sudo quasilattice setup --system")
+            logger.info("Please run: sudo quasilattice setup --system")
             return
         if (shutil.which("systemctl") is not None):
             setup_systemd_service(args.system)
         else:
             logger.error("systemd is not installed.")
-            logger.info("Quasilattice can still be run manually with:")
-            logger.info("  quasilattice run")
+            logger.info("Quasilattice can still be run manually with: quasilattice run")
     elif system == "Windows":
         setup_windows_service(args.system)
     elif system == "Darwin":
         setup_launchd_service(args.system)
     else:
         logger.error(f"Unsupported OS: {system}")
-        logger.info("Quasilattice can still be run manually with:")
-        logger.info("  quasilattice run")
+        logger.info("Quasilattice can still be run manually with: quasilattice run")
 
 def remove(args):
     """
     Remove the QuasiLattice background service.
     """
-    if args.log_level is not None:
-        logger.setLevel(60 - args.log_level*10)
-    if args.debug:
-        logger.setLevel(10)
+    quasilattice.init(
+         config_path=args.config_path,
+        log_level=5 if args.debug else args.log_level,
+    )
     system = platform.system()
-    logger.debug("QuasiLattice Version:",quasilattice.__version__)
-    logger.debug("Operating System:",system)
+    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if args.system and os.geteuid() != 0:
             logger.error("System service removal requires root privileges.")
-            logger.info("Please run:")
-            logger.info("  sudo quasilattice remove --system")
+            logger.info("Please run: sudo quasilattice remove --system")
             return
         if (shutil.which("systemctl") is not None):
             remove_systemd_service(args.system)
         else:
             logger.error("systemd is not installed.")
-            logger.info("Quasilattice can still be run manually with:")
-            logger.info("  quasilattice run")
+            logger.info("Quasilattice can still be run manually with: quasilattice run")
     elif system == "Windows":
         remove_windows_service(args.system)
     elif system == "Darwin":
         remove_launchd_service(args.system)
     else:
         logger.error(f"Unsupported OS: {system}")
-        logger.info("Quasilattice can still be run manually with:")
-        logger.info("  quasilattice run")
+        logger.info("Quasilattice can still be run manually with: quasilattice run")
 
 def start(args):
-    if args.log_level is not None:
-        logger.setLevel(60 - args.log_level*10)
-    if args.debug:
-        logger.setLevel(10)
+    quasilattice.init(
+         config_path=args.config_path,
+        log_level=5 if args.debug else args.log_level,
+    )
     system = platform.system()
-    logger.debug("QuasiLattice Version:",quasilattice.__version__)
-    logger.debug("Operating System:",system)
+    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if (shutil.which("systemctl") is not None):
             start_systemd_service(args.system)
         else:
             logger.error("systemd is not installed.")
-            logger.info("Quasilattice can still be run manually with:")
-            logger.info("  quasilattice run")
+            logger.info("Quasilattice can still be run manually with: quasilattice run")
     elif system == "Windows":
         start_windows_service(args.system)
     elif system == "Darwin":
         start_launchd_service(args.system)
     else:
         logger.error(f"Unsupported OS: {system}")
-        logger.info("Quasilattice can still be run manually with:")
-        logger.info("  quasilattice run")
+        logger.info("Quasilattice can still be run manually with: quasilattice run")
 
 def stop(args):
-    if args.log_level is not None:
-        logger.setLevel(60 - args.log_level*10)
-    if args.debug:
-        logger.setLevel(10)
+    quasilattice.init(
+         config_path=args.config_path,
+        log_level=5 if args.debug else args.log_level,
+    )
     system = platform.system()
-    logger.debug("QuasiLattice Version:",quasilattice.__version__)
-    logger.debug("Operating System:",system)
+    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if (shutil.which("systemctl") is not None):
             stop_systemd_service(args.system)
         else:
             logger.error("systemd is not installed.")
-            logger.info("Quasilattice can still be run manually with:")
-            logger.info("  quasilattice run")
+            logger.info("Quasilattice can still be run manually with: quasilattice run")
     elif system == "Windows":
         stop_windows_service(args.system)
     elif system == "Darwin":
         stop_launchd_service(args.system)
     else:
         logger.error(f"Unsupported OS: {system}")
-        logger.info("Quasilattice can still be run manually with:")
-        logger.info("  quasilattice run")
+        logger.info("Quasilattice can still be run manually with: quasilattice run")
 
 def status(args):
-    if args.log_level is not None:
-        logger.setLevel(60 - args.log_level*10)
-    if args.debug:
-        logger.setLevel(10)
+    quasilattice.init(
+         config_path=args.config_path,
+        log_level=5 if args.debug else args.log_level,
+    )
     system = platform.system()
-    logger.debug("QuasiLattice Version:",quasilattice.__version__)
-    logger.debug("Operating System:",system)
+    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if (shutil.which("systemctl") is not None):
             status_systemd_service(args.system)
         else:
             logger.error("systemd is not installed.")
-            logger.info("Quasilattice can still be run manually with:")
-            logger.info("  quasilattice run")
+            logger.info("Quasilattice can still be run manually with: quasilattice run")
     elif system == "Windows":
         status_windows_service(args.system)
     elif system == "Darwin":
         status_launchd_service(args.system)
     else:
         logger.error(f"Unsupported OS: {system}")
-        logger.info("Quasilattice can still be run manually with:")
-        logger.info("  quasilattice run")
+        logger.info("Quasilattice can still be run manually with: quasilattice run")
 
 def setup_systemd_service(system: bool = False):
     if system:
@@ -203,12 +191,10 @@ def remove_systemd_service(system: bool = False):
         logger.error("No service found at",service_path)
         if os.path.isfile(system_service_path):
             logger.info("But a service was discovered at",system_service_path)
-            logger.info("To remove it, run:")
-            logger.info("  quasilattice remove --system")
+            logger.info("To remove it, run: quasilattice remove --system")
         elif os.path.isfile(user_service_path):
             logger.info("But a service was discovered at",user_service_path)
-            logger.info("To remove it, run:")
-            logger.info("  quasilattice remove")
+            logger.info("To remove it, run: quasilattice remove")
         else:
             logger.info("Nothing to remove.")
         return
@@ -228,8 +214,7 @@ def start_systemd_service(system: bool = False):
         result = subprocess.run([*systemctl_inverted, "cat", SERVICE_NAME],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if result.returncode != 0:
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
             return
         else:
             try:
@@ -257,8 +242,7 @@ def stop_systemd_service(system: bool = False):
         result = subprocess.run([*systemctl_inverted, "cat", SERVICE_NAME],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if result.returncode != 0:
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
             return
         else:
             try:
@@ -286,8 +270,7 @@ def status_systemd_service(system: bool = False):
         result = subprocess.run([*systemctl_inverted, "cat", SERVICE_NAME],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if result.returncode != 0:
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
             return
         else:
             try:
@@ -402,8 +385,7 @@ def start_launchd_service(system: bool = False):
     plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
     if not os.path.isfile(plist_path):
         logger.error("QuasiLattice service is not setup.")
-        logger.info("You can install it by running:")
-        logger.info("  quasilattice setup")
+        logger.info("You can install it by running: quasilattice setup")
         return
     stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     target = _launchd_target()
@@ -434,8 +416,7 @@ def stop_launchd_service(system: bool = False):
     plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
     if not os.path.isfile(plist_path):
         logger.error("QuasiLattice service is not setup.")
-        logger.info("You can install it by running:")
-        logger.info("  quasilattice setup")
+        logger.info("You can install it by running: quasilattice setup")
         return
     if not _launchd_service_loaded():
         logger.debug("QuasiLattice service is already stopped.")
@@ -458,8 +439,7 @@ def status_launchd_service(system: bool = False):
     plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
     if not os.path.isfile(plist_path):
         logger.error("QuasiLattice service is not setup.")
-        logger.info("You can install it by running:")
-        logger.info("  quasilattice setup")
+        logger.info("You can install it by running: quasilattice setup")
         return
     result = subprocess.run(["launchctl", "print", _launchd_target()], capture_output=True, text=True, check=False)
     if result.returncode != 0:
@@ -528,8 +508,7 @@ def start_windows_service(system: bool = False):
             logger.debug("Failed to start the QuasiLattice service:")
             logger.debug((result.stderr or result.stdout).strip())
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
         else:
             logger.error("Failed to start the QuasiLattice service:")
             logger.error((result.stderr or result.stdout).strip())
@@ -548,8 +527,7 @@ def stop_windows_service(system: bool = False):
             logger.debug("Failed to stop the QuasiLattice service:")
             logger.debug((result.stderr or result.stdout).strip())
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
         else:
             logger.error("Failed to stop the QuasiLattice service:")
             logger.error((result.stderr or result.stdout).strip())
@@ -568,8 +546,7 @@ def status_windows_service(system: bool = False):
         if ("The system cannot find the file specified." in (result.stderr or result.stdout).strip()):
             logger.debug((result.stderr or result.stdout).strip())
             logger.error("QuasiLattice service is not setup.")
-            logger.info("You can install it by running:")
-            logger.info("  quasilattice setup")
+            logger.info("You can install it by running: quasilattice setup")
         else:
             logger.error((result.stderr or result.stdout).strip())
         return
@@ -584,6 +561,7 @@ def main():
     parser.add_argument("-d", "--debug", action="store_true", help="Provide debug logging. Equivalent to --log-level 5")
     parser.add_argument("-l", "--log-level", type=int, help="Log level (0-5) determines how much information is logged.")
     parser.add_argument("-s", "--system", action="store_true", help="System service. Requires elevated permissions.")
+    parser.add_argument("--config_path", type=str, help="Path to the config file.")
     
     subparsers = parser.add_subparsers(
         dest="command", 
@@ -602,6 +580,7 @@ def main():
         subparser.add_argument("-d", "--debug", action="store_true", help="Provide debug logging. Equivalent to --log-level 5")
         subparser.add_argument("-l", "--log-level", type=int, help="Log level (0-5) determines how much information is logged.")
         subparser.add_argument("-s", "--system", action="store_true", help="System service. Requires elevated permissions.")
+        subparser.add_argument("--config_path", type=str, help="Path to the config file.")
 
     args = parser.parse_args()
     args.func(args)
