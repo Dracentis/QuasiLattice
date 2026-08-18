@@ -1,29 +1,58 @@
 import sys
 import os
 import time
+import logging
 import threading
 import tomllib
 
 config = {}
 config_path = os.path.expanduser("~/.quasilattice/config.toml")
-log_file = None
+
+sync_thread = None
 last_sync_time = time.time()
 
-def init(config_path: str|None = None, log_level: str|None = None, log_path: str|None = None):    
-    if config_path is None: 
+logger = logging.getLogger("quasilattice")
+
+class __LogFormatter(logging.Formatter):
+
+    LEVEL_COLORS = {
+        logging.DEBUG: "\033[36m",     # cyan
+        logging.INFO: "\033[32m",      # green
+        logging.WARNING: "\033[33m",   # yellow
+        logging.ERROR: "\033[31m",     # red
+        logging.CRITICAL: "\033[41m",  # red background
+    }
+
+    COLOR_RESET = "\033[0m"
+
+    def format(self, record):
+        color = self.LEVEL_COLORS.get(record.levelno)
+        original_levelname = record.levelname
+        if color:
+            record.levelname = f"{color}{original_levelname}{self.COLOR_RESET}"
+        try:
+            return super().format(record)
+        finally:
+            record.levelname = original_levelname
+
+
+def init(config_path: str | None = None, log_level: str | None = None, log_path: str | None = None):
+    if config_path is None:
         if os.path.isdir("/etc/quasilattice") and os.path.isfile("/etc/quasilattice/config.toml"):
             config_path = "/etc/quasilattice/config.toml"
-        elif (os.path.isdir(os.path.expanduser("~/.config/quasilattice")) 
+        elif (os.path.isdir(os.path.expanduser("~/.config/quasilattice"))
                 and os.path.isfile(os.path.expanduser("~/.config/quasilattice/config.toml"))):
             config_path = os.path.expanduser("~/.config/quasilattice/config.toml")
         else:
             config_path = os.path.expanduser("~/.quasilattice/config.toml")
     sys.modules[__name__].config_path = config_path
-        
+
     # load config
+    created_default_config = False
     if not os.path.isfile(config_path):
-        print("Creating default config file.")
         write_default_config_file()
+        created_default_config = True
+    global config
     with open(config_path, "rb") as config_file:
         config = tomllib.load(config_file)
     validate_config()
@@ -32,27 +61,51 @@ def init(config_path: str|None = None, log_level: str|None = None, log_path: str
     if log_path is not None:
         config["logging"]["log_path"] = log_path
 
-    if sys.stdout is None or sys.stderr is None:
-        os.makedirs(os.path.dirname(config["logging"]["log_path"]), exist_ok=True)
-        global log_file
-        log_file = open(config["logging"]["log_path"], "a", buffering=1)
-        sys.stdout = log_file
-        sys.stderr = log_file
+    # setup logging
+    logger.setLevel(60 - config["logging"]["log_level"] * 10)
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    if config["logging"]["log_to_stderr"]:
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setFormatter(__LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
+        logger.addHandler(stderr_handler)
+    if config["logging"]["log_to_file"]:
+        log_dir = os.path.dirname(config["logging"]["log_path"])
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.RotatingFileHandler(config["logging"]["log_path"],
+                                                   maxBytes=config["logging"]["max_log_file_size_bytes"],
+                                                   backupCount=config["logging"]["log_file_backup_count"],)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: \t%(message)s"))
+        logger.addHandler(file_handler)
+    for uv_logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(uv_logger_name)
+        uv_logger.handlers = logger.handlers
+        uv_logger.setLevel(logger.level)
+        uv_logger.propagate = False
+    if created_default_config:
+        logger.info(f"No config file found. Created default config at {config_path}")
+    else:
+        logger.debug(f"Config file successfully loaded from {config_path}")
 
+    # TODO: load plugins here
+
+    # start the sync thread
     if config["sync"]["enabled"]:
         start_sync_job()
+
 
 def validate_config():
     global config
     if not config:
         config = {}
-    
+
     if "quasilattice" not in config:
         config["quasilattice"] = {}
     if "database_path" not in config["quasilattice"]:
-        config["quasilattice"]["database_path"] = os.path.join(os.path.dirname(config_path),"quasilattice.db")
+        config["quasilattice"]["database_path"] = os.path.join(os.path.dirname(config_path), "quasilattice.db")
     if "files_dir" not in config["quasilattice"]:
-        config["quasilattice"]["files_dir"] = os.path.join(os.path.dirname(config_path),"files")
+        config["quasilattice"]["files_dir"] = os.path.join(os.path.dirname(config_path), "files")
     if "max_file_size_gb" not in config["quasilattice"]:
         config["quasilattice"]["max_file_size_gb"] = 10
     if "case_sensitive_aliases" not in config["quasilattice"]:
@@ -67,7 +120,7 @@ def validate_config():
         config["quasilattice"]["default_alias_timeout_ms"] = 200
     if "archive_mode" not in config["quasilattice"]:
         config["quasilattice"]["archive_mode"] = False
-    
+
     if "sync" not in config:
         config["sync"] = {}
     if "enabled" not in config["sync"]:
@@ -76,14 +129,14 @@ def validate_config():
         config["sync"]["sync_interval_sec"] = 300
     if "peers" not in config["sync"]:
         config["sync"]["peers"] = {}
-    
+
     if "logging" not in config:
         config["logging"] = {}
     if "log_level" not in config["logging"]:
         config["logging"]["log_level"] = 3
-    if "log_dir" not in config["logging"]:
-        config["logging"]["log_dir"] = os.path.join(os.path.dirname(config_path),"quasilattice.log")
-    
+    if "log_path" not in config["logging"]:
+        config["logging"]["log_path"] = os.path.join(os.path.dirname(config_path), "quasilattice.log")
+
     if "http" not in config:
         config["http"] = {}
     if "enabled" not in config["http"]:
@@ -96,6 +149,7 @@ def validate_config():
         config["http"]["require_authentication"] = True
     if "api_key_length" not in config["http"]:
         config["http"]["api_key_length"] = 20
+
 
 def write_default_config_file():
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
@@ -164,10 +218,22 @@ sync_interval_sec = 300
 #   3: Warning
 #   4: Info (default)
 #   5: Debug (most ammount of logging)
-log_level = 3
+log_level = 4
 
-# Log directory determines where the log file is written to:
-log_dir = "{os.path.join(os.path.dirname(config_path),"quasilattice.log")}"
+# Save logs to a log file (default: true):
+log_to_file = true
+
+# Max log file size in bytes (default: 10485760)
+max_log_file_size_bytes = 10485760
+
+# Max number of log files
+log_file_backup_count = 3
+
+# Write logs to a stderr (default: true):
+log_to_stderr = true
+
+# Log path determines where the log file is written to:
+log_path = "{os.path.join(os.path.dirname(config_path),"quasilattice.log")}"
 
 
 [http]
@@ -188,20 +254,34 @@ api_key_length = 20
 
 """)
 
+
 def sync_with_peers():
-    pass # TODO: implement syncing
+    pass  # TODO: implement syncing
+
 
 def start_sync_job():
-    if sync_thread == None:
+    global sync_thread
+    if sync_thread is None:
         sync_thread = threading.Thread(target=_sync_job)
         sync_thread.daemon = True
         sync_thread.start()
 
+
 def _sync_job():
+    global last_sync_time
     while True:
         now = time.time()
-        if now > last_sync_time+config["sync"]["sync_interval_sec"]:
+        if now > last_sync_time + config["sync"]["sync_interval_sec"]:
             sync_with_peers()
             last_sync_time = time.time()
-        time.sleep(config["sync"]["sync_interval_sec"])
-        
+        time.sleep(min(config["sync"]["sync_interval_sec"],1800))
+
+
+def run(config_path: str | None = None, log_level: str | None = None, log_path: str | None = None):
+    init(config_path, log_level, log_path)
+    if config["http"]["enabled"]:
+        import uvicorn
+        uvicorn.run("quasilattice.api:app", host=config["http"]["host"], port=config["http"]["port"], log_config=None)
+    else:
+        while True:
+            time.sleep(1800) # sleep to keep the process running
