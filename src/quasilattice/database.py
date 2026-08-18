@@ -8,8 +8,9 @@ logger = logging.getLogger("quasilattice")
 
 def create_database():
     try:
-        logging.debug(f"Creating database at {quasilattice.config['quasilattice']['database_path']}")
-        os.makedirs(os.path.dirname(quasilattice.config["quasilattice"]["database_path"]), exist_ok=True)
+        db_path = quasilattice.config["quasilattice"]["database_path"]
+        logger.debug(f"Creating database at {db_path}")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
     except KeyError:
         logger.critical("Config not loaded! You must call quasilattice.init() first.")
         if logger.getEffectiveLevel() <= 10:
@@ -28,8 +29,11 @@ def create_database():
     except Exception:
         raise
     try:
-        with sqlite3.connect(quasilattice.config["quasilattice"]["database_path"]) as sql_connection:
+        with sqlite3.connect(db_path) as sql_connection:
             sql_cursor = sql_connection.cursor()
+
+            # enforce foreign key constraints (off by default in sqlite)
+            sql_cursor.execute("PRAGMA foreign_keys = ON;")
 
             # create info table
             sql_cursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='info';""")
@@ -52,9 +56,10 @@ def create_database():
                 sql_cursor.execute("""
                     CREATE TABLE api_keys (
                         id TEXT PRIMARY KEY NOT NULL,
-                        key TEXT NOT NULL,
+                        key_hash TEXT NOT NULL,
                         note TEXT,
-                        owner TEXT
+                        owner TEXT,
+                        FOREIGN KEY (owner) REFERENCES users(user)
                     )""")
 
             # create entries table
@@ -73,6 +78,7 @@ def create_database():
                         metadata TEXT,
                         metadata_zstd BLOB,
                         PRIMARY KEY (uuid, time_edited),
+                        FOREIGN KEY (edited_by) REFERENCES users(user),
                         CHECK (
                             (metadata IS NOT NULL AND metadata_zstd IS NULL)
                             OR (metadata IS NULL AND metadata_zstd IS NOT NULL)
@@ -88,8 +94,12 @@ def create_database():
                         access TEXT NOT NULL,
                         time_edited INTEGER NOT NULL,
                         edited_by TEXT,
-                        PRIMARY KEY (entry_uuid, access, time_edited)
+                        PRIMARY KEY (entry_uuid, access, time_edited),
+                        FOREIGN KEY (edited_by) REFERENCES users(user)
                     )""")
+                sql_cursor.execute("""
+                    CREATE INDEX index_read_access_entry_uuid ON read_access(entry_uuid)
+                """)
 
             # create write access table
             sql_cursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='write_access';""")
@@ -100,8 +110,12 @@ def create_database():
                         access TEXT NOT NULL,
                         time_edited INTEGER NOT NULL,
                         edited_by TEXT,
-                        PRIMARY KEY (entry_uuid, access, time_edited)
+                        PRIMARY KEY (entry_uuid, access, time_edited),
+                        FOREIGN KEY (edited_by) REFERENCES users(user)
                     )""")
+                sql_cursor.execute("""
+                    CREATE INDEX index_write_access_entry_uuid ON write_access(entry_uuid)
+                """)
 
             # create metadata_tree table
             sql_cursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='metadata_tree';""")
@@ -113,8 +127,12 @@ def create_database():
                         time_edited INTEGER NOT NULL,
                         name TEXT NOT NULL,
                         value TEXT,
-                        parent_uuid BLOB
+                        parent_uuid BLOB,
+                        FOREIGN KEY (parent_uuid) REFERENCES metadata_tree(uuid)
                     )""")
+                sql_cursor.execute("""
+                    CREATE INDEX index_metadata_tree_entry_uuid ON metadata_tree(entry_uuid)
+                """)
 
             # create hashes table
             sql_cursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='hashes';""")
