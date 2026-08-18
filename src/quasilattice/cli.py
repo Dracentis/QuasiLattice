@@ -154,7 +154,7 @@ def setup_systemd_service(system: bool = False):
         user_line: str = "User="+getpass.getuser()+"\n"
         service_path = os.path.join(os.path.expanduser("~"),".config","systemd","user",f"{SERVICE_NAME}.service")
         systemctl = ["systemctl", "--user"]
-    logger.debug("Installing service at:",service_path)
+    logger.debug(f"Installing service at: {service_path}")
     os.makedirs(os.path.dirname(service_path), exist_ok=True)
     with open(service_path, "w") as service_file: 
         service_file.write(f"""
@@ -188,17 +188,17 @@ def remove_systemd_service(system: bool = False):
         service_path = user_service_path
         systemctl = ["systemctl", "--user"]
     if not os.path.isfile(service_path):
-        logger.error("No service found at",service_path)
+        logger.error(f"No service found at {service_path}")
         if os.path.isfile(system_service_path):
-            logger.info("But a service was discovered at",system_service_path)
+            logger.info(f"But a service was discovered at {system_service_path}")
             logger.info("To remove it, run: quasilattice remove --system")
         elif os.path.isfile(user_service_path):
-            logger.info("But a service was discovered at",user_service_path)
+            logger.info(f"But a service was discovered at {user_service_path}")
             logger.info("To remove it, run: quasilattice remove")
         else:
             logger.info("Nothing to remove.")
         return
-    logger.debug("Removing service from:",service_path)
+    logger.debug(f"Removing service from: {service_path}")
     stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     subprocess.run([*systemctl, "stop", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
     subprocess.run([*systemctl, "disable", SERVICE_NAME], check=True, stdout = stdout, stderr = stdout)
@@ -332,7 +332,7 @@ def setup_launchd_service(system: bool = False):
 </plist>
 """
     plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
-    logger.debug("Installing service at:",plist_path)
+    logger.debug(f"Installing service at: {plist_path}")
     os.makedirs(os.path.dirname(plist_path), exist_ok=True)
     with open(plist_path, "w") as plist_file: 
         plist_file.write(plist_content)
@@ -362,10 +362,10 @@ def remove_launchd_service(system: bool = False):
         return
     plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents" , f"{SERVICE_NAME}.plist")
     if not os.path.isfile(plist_path):
-        logger.info("No service found at",plist_path)
+        logger.info(f"No service found at {plist_path}")
         logger.info("Nothing to remove.")
         return
-    logger.debug("Removing service from:",plist_path)
+    logger.debug(f"Removing service from: {plist_path}")
     stdout = None if logger.getEffectiveLevel() <= 10 else subprocess.DEVNULL
     if _launchd_service_loaded():
         try:
@@ -462,7 +462,7 @@ def setup_windows_service(system: bool = False):
     if system:
         logger.warning("--system is not used on Windows; the scheduled task runs at user logon regardless.")
     windows_exe = get_windows_executable()
-    logger.debug("Using exe:",windows_exe)
+    logger.debug(f"Using exe: {windows_exe}")
     result = subprocess.run(
         ["schtasks", "/Create", "/SC", "ONLOGON", "/RL", "HIGHEST", "/TN", SERVICE_NAME,
          "/TR", f'"{windows_exe}" -m quasilattice run', "/F"],
