@@ -15,12 +15,6 @@ sync_thread = None
 last_sync_time = time.time()
 
 logger = logging.getLogger("quasilattice")
-logger.setLevel(20)
-for handler in logger.handlers[:]:
-    logger.removeHandler(handler)
-stderr_handler = logging.StreamHandler(sys.stderr)
-stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
-logger.addHandler(stderr_handler)
 
 class _LogFormatter(logging.Formatter):
 
@@ -44,6 +38,13 @@ class _LogFormatter(logging.Formatter):
         finally:
             record.levelname = original_levelname
 
+# init fallback logger
+logger.setLevel(20)
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
+logger.addHandler(stderr_handler)
 
 def init(config_path: str | None = None, log_level: int | None = None, log_path: str | None = None):
     if config_path is None:
@@ -99,8 +100,8 @@ def init(config_path: str | None = None, log_level: int | None = None, log_path:
     else:
         logger.debug(f"Config file successfully loaded from {config_path}")
 
-    # create database
-    database.create_database()
+    # init database
+    database.validate_database()
 
     # create files directory
     os.makedirs(config["quasilattice"]["files_dir"], exist_ok=True)
@@ -304,6 +305,7 @@ def _sync_job():
 
 def run(config_path: str | None = None, log_level: str | None = None, log_path: str | None = None):
     init(config_path, log_level, log_path)
+    logger.debug("Running QuasiLattice!")
     if config["http"]["enabled"]:
         import uvicorn
         uvicorn.run("quasilattice.api:app", host=config["http"]["host"], port=config["http"]["port"], log_config=None)

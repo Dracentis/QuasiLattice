@@ -1,15 +1,16 @@
 import os
 import logging
+import contextlib
 import sqlite3 # sqlite database
 
 import quasilattice
 
 logger = logging.getLogger("quasilattice")
 
-def create_database():
+def validate_database():
     try:
         db_path = quasilattice.config["quasilattice"]["database_path"]
-        logger.debug(f"Creating database at {db_path}")
+        logger.debug(f"Validating database at {db_path}")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
     except KeyError:
         logger.critical("Config not loaded! You must call quasilattice.init() first.")
@@ -168,14 +169,27 @@ def create_database():
             sql_connection.commit()
             sql_cursor.close()
     except PermissionError:
-        logger.critical("Permission denied while creating database.")
+        logger.critical("Permission denied while validating database.")
         if logger.getEffectiveLevel() <= 10:
             raise
         return
     except OSError as e:
-        logger.critical("Failed to create database.")
+        logger.critical("Failed to validate database.")
         if logger.getEffectiveLevel() <= 10:
             raise
         return
     except Exception:
         raise
+    logger.debug(f"Database validated successfully!")
+
+@contextlib.contextmanager
+def connection():
+    """Yields an sqlite3 connection to access the quasilattice database."""
+    db_path = quasilattice.config["quasilattice"]["database_path"]
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA foreign_keys = ON;")
+        yield connection
+    finally:
+        connection.close()

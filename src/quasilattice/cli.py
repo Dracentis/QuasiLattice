@@ -1,4 +1,3 @@
-import quasilattice
 import os
 import sys
 import platform
@@ -7,6 +6,8 @@ import shutil
 import subprocess
 import getpass
 import logging
+
+import quasilattice
 
 SERVICE_NAME = "quasilattice"
 
@@ -38,6 +39,7 @@ def setup(args):
         config_path=args.config_path,
         log_level=5 if args.debug else args.log_level,
     )
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
     system = platform.system()
     logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
@@ -67,6 +69,7 @@ def remove(args):
          config_path=args.config_path,
         log_level=5 if args.debug else args.log_level,
     )
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
     system = platform.system()
     logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
@@ -93,6 +96,7 @@ def start(args):
          config_path=args.config_path,
         log_level=5 if args.debug else args.log_level,
     )
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
     system = platform.system()
     logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
@@ -115,6 +119,8 @@ def stop(args):
          config_path=args.config_path,
         log_level=5 if args.debug else args.log_level,
     )
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
     system = platform.system()
     logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
@@ -137,6 +143,7 @@ def status(args):
          config_path=args.config_path,
         log_level=5 if args.debug else args.log_level,
     )
+    logger.debug("CLI: quasilattice "+str(" ".join(sys.argv[1:])))
     system = platform.system()
     logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
