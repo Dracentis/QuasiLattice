@@ -1,11 +1,11 @@
-import os
-import sys
-import platform
 import argparse
-import shutil
-import subprocess
 import getpass
 import logging
+import os
+import platform
+import shutil
+import subprocess
+import sys
 
 import quasilattice
 

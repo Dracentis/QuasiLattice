@@ -34,3 +34,9 @@ quasilattice = "quasilattice.cli:main"
 
 [tool.fastapi]
 entrypoint = "quasilattice.api:app"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"

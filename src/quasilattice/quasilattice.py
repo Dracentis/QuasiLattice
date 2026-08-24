@@ -1,9 +1,13 @@
-import sys
-import os
-import time
+from __future__ import annotations
+
 import logging
 import logging.handlers
+import os
+import sys
 import threading
+import time
+import typing
+
 import tomllib
 
 from . import database
@@ -16,13 +20,13 @@ last_sync_time = time.time()
 
 logger = logging.getLogger("quasilattice")
 
-class _LogFormatter(logging.Formatter):
 
-    LEVEL_COLORS = {
-        logging.DEBUG: "\033[36m",     # cyan
-        logging.INFO: "\033[32m",      # green
-        logging.WARNING: "\033[33m",   # yellow
-        logging.ERROR: "\033[31m",     # red
+class _LogFormatter(logging.Formatter):
+    LEVEL_COLORS: typing.ClassVar[dict[int, str]] = {
+        logging.DEBUG: "\033[36m",  # cyan
+        logging.INFO: "\033[32m",  # green
+        logging.WARNING: "\033[33m",  # yellow
+        logging.ERROR: "\033[31m",  # red
         logging.CRITICAL: "\033[41m",  # red background
     }
 
@@ -38,6 +42,7 @@ class _LogFormatter(logging.Formatter):
         finally:
             record.levelname = original_levelname
 
+
 # init fallback logger
 logger.setLevel(20)
 for handler in logger.handlers[:]:
@@ -46,12 +51,20 @@ stderr_handler = logging.StreamHandler(sys.stderr)
 stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
 logger.addHandler(stderr_handler)
 
-def init(config_path: str | None = None, log_level: int | None = None, log_path: str | None = None):
+
+def init(
+    config_path: str | None = None,
+    log_level: int | None = None,
+    log_path: str | None = None,
+):
     if config_path is None:
-        if os.path.isdir("/etc/quasilattice") and os.path.isfile("/etc/quasilattice/config.toml"):
+        if os.path.isdir("/etc/quasilattice") and os.path.isfile(
+            "/etc/quasilattice/config.toml"
+        ):
             config_path = "/etc/quasilattice/config.toml"
-        elif (os.path.isdir(os.path.expanduser("~/.config/quasilattice"))
-                and os.path.isfile(os.path.expanduser("~/.config/quasilattice/config.toml"))):
+        elif os.path.isdir(
+            os.path.expanduser("~/.config/quasilattice")
+        ) and os.path.isfile(os.path.expanduser("~/.config/quasilattice/config.toml")):
             config_path = os.path.expanduser("~/.config/quasilattice/config.toml")
         else:
             config_path = os.path.expanduser("~/.quasilattice/config.toml")
@@ -77,7 +90,9 @@ def init(config_path: str | None = None, log_level: int | None = None, log_path:
         logger.removeHandler(handler)
     if config["logging"]["log_to_stderr"]:
         stderr_handler = logging.StreamHandler(sys.stderr)
-        stderr_handler.setFormatter(_LogFormatter("%(levelname)s %(name)s: \t%(message)s"))
+        stderr_handler.setFormatter(
+            _LogFormatter("%(levelname)s %(name)s: \t%(message)s")
+        )
         logger.addHandler(stderr_handler)
     if config["logging"]["log_to_file"]:
         log_dir = os.path.dirname(config["logging"]["log_path"])
@@ -88,7 +103,9 @@ def init(config_path: str | None = None, log_level: int | None = None, log_path:
             maxBytes=config["logging"]["max_log_file_size_bytes"],
             backupCount=config["logging"]["log_file_backup_count"],
         )
-        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: \t%(message)s"))
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: \t%(message)s")
+        )
         logger.addHandler(file_handler)
     for uv_logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uv_logger = logging.getLogger(uv_logger_name)
@@ -121,9 +138,13 @@ def validate_config():
     if "quasilattice" not in config:
         config["quasilattice"] = {}
     if "database_path" not in config["quasilattice"]:
-        config["quasilattice"]["database_path"] = os.path.join(os.path.dirname(config_path), "quasilattice.db")
+        config["quasilattice"]["database_path"] = os.path.join(
+            os.path.dirname(config_path), "quasilattice.db"
+        )
     if "files_dir" not in config["quasilattice"]:
-        config["quasilattice"]["files_dir"] = os.path.join(os.path.dirname(config_path), "files")
+        config["quasilattice"]["files_dir"] = os.path.join(
+            os.path.dirname(config_path), "files"
+        )
     if "max_file_size_gb" not in config["quasilattice"]:
         config["quasilattice"]["max_file_size_gb"] = 10
     if "case_sensitive_aliases" not in config["quasilattice"]:
@@ -161,7 +182,9 @@ def validate_config():
     if "log_file_backup_count" not in config["logging"]:
         config["logging"]["log_file_backup_count"] = 3
     if "log_path" not in config["logging"]:
-        config["logging"]["log_path"] = os.path.join(os.path.dirname(config_path), "quasilattice.log")
+        config["logging"]["log_path"] = os.path.join(
+            os.path.dirname(config_path), "quasilattice.log"
+        )
 
     if "http" not in config:
         config["http"] = {}
@@ -186,10 +209,10 @@ def write_default_config_file():
 [quasilattice]
 
 # Path to the SQLite database file:
-database_path = "{os.path.join(os.path.dirname(config_path),"quasilattice.db")}"
+database_path = "{os.path.join(os.path.dirname(config_path), "quasilattice.db")}"
 
 # Directory to store files associated with lattice entries:
-files_dir = "{os.path.join(os.path.dirname(config_path),"files")}"
+files_dir = "{os.path.join(os.path.dirname(config_path), "files")}"
 
 # Max file size in gigabytes (default: 10):
 max_file_size_gb = 10
@@ -259,7 +282,7 @@ log_file_backup_count = 3
 log_to_stderr = true
 
 # Log path determines where the log file is written to:
-log_path = "{os.path.join(os.path.dirname(config_path),"quasilattice.log")}"
+log_path = "{os.path.join(os.path.dirname(config_path), "quasilattice.log")}"
 
 
 [http]
@@ -300,15 +323,56 @@ def _sync_job():
         if now > last_sync_time + config["sync"]["sync_interval_sec"]:
             sync_with_peers()
             last_sync_time = time.time()
-        time.sleep(min(config["sync"]["sync_interval_sec"],1800))
+        time.sleep(min(config["sync"]["sync_interval_sec"], 1800))
 
 
-def run(config_path: str | None = None, log_level: str | None = None, log_path: str | None = None):
+def run(
+    config_path: str | None = None,
+    log_level: str | None = None,
+    log_path: str | None = None,
+):
     init(config_path, log_level, log_path)
     logger.debug("Running QuasiLattice!")
     if config["http"]["enabled"]:
         import uvicorn
-        uvicorn.run("quasilattice.api:app", host=config["http"]["host"], port=config["http"]["port"], log_config=None)
+
+        uvicorn.run(
+            "quasilattice.api:app",
+            host=config["http"]["host"],
+            port=config["http"]["port"],
+            log_config=None,
+        )
     else:
         while True:
-            time.sleep(1800) # sleep to keep the process running
+            time.sleep(1800)  # sleep to keep the process running
+
+
+def get_entry(uuid: bytes) -> dict | None:
+    with database.connection() as connection:
+        cursor = connection.cursor()
+        row = database.read_entry_row(cursor, uuid)
+        connection.commit()
+        cursor.close()
+
+    if row is None:
+        return None  # entry not found in database
+
+    entry = database.convert_entry_row_to_dict(row)
+
+    return entry
+
+
+def get_entry_versions(
+    uuid: bytes, max_number_of_versions: int = 500, descending: bool = True
+) -> list[dict]:
+    with database.connection() as connection:
+        cursor = connection.cursor()
+        rows = database.get_entry_rows(cursor, uuid, max_number_of_versions, descending)
+        connection.commit()
+        cursor.close()
+
+    entry_versions = []
+    for row in rows:
+        entry_versions.append(database.convert_entry_row_to_dict(row))
+
+    return entry_versions
