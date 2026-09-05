@@ -15,6 +15,8 @@ from . import database
 config = {}
 config_path = os.path.expanduser("~/.quasilattice/config.toml")
 
+current_default_alias_length = 1
+
 sync_thread = None
 last_sync_time = time.time()
 
@@ -119,6 +121,7 @@ def init(
 
     # init database
     database.validate_database()
+    database.update_info()
 
     # create files directory
     os.makedirs(config["quasilattice"]["files_dir"], exist_ok=True)
@@ -132,6 +135,7 @@ def init(
 
 def validate_config():
     global config
+    global current_default_alias_length
     if not config:
         config = {}
 
@@ -153,6 +157,7 @@ def validate_config():
         config["quasilattice"]["generate_default_aliases"] = True
     if "default_alias_length" not in config["quasilattice"]:
         config["quasilattice"]["default_alias_length"] = 4
+    current_default_alias_length = max(current_default_alias_length, config["quasilattice"]["default_alias_length"])
     if "default_alias_characters" not in config["quasilattice"]:
         config["quasilattice"]["default_alias_characters"] = "0123456789acdefhjkmnprtwz"
     if "default_alias_timeout_ms" not in config["quasilattice"]:
@@ -251,12 +256,11 @@ sync_interval_sec = 300
   # authentication, then you must include either a username and password
   # or an api key to authenticate with the peer. An example is shown below:
   [peers]
-    # [Local Host]
+    # [Example Local Server]
     #   protocol = "http"
-    #   host = "127.0.0.1"
-    #   port = 8312
+    #   url = "http://192.168.0.11"
     #   username = "admin"
-    #   password = "admin" 
+    #   password = "admin"
 
 
 [logging]
@@ -289,8 +293,8 @@ log_path = "{os.path.join(os.path.dirname(config_path), "quasilattice.log")}"
 # Enable the http interface (default: true):
 enabled = true
 
-# Host to bind to (default: "0.0.0.0"):
-host = "0.0.0.0"
+# Host to bind to (default: "127.0.0.1"):
+host = "127.0.0.1"
 
 # Port to bind to (default: 8312):
 port = 8312

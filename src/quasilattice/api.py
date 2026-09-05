@@ -7,12 +7,10 @@ import uuid
 
 import fastapi
 import fastapi.security
-import jwt.exceptions
+import jwt
 import pwdlib
 
 import quasilattice
-
-from . import database
 
 # code for generating uuids:
 # random_uuid = uuid.uuid4() # generate a random uuid
@@ -62,8 +60,8 @@ def get_api():
 
 
 @app.get("/api/users")
-def get_users():
-    return ["kaedon", "stm1_scanning_computer"]  # only allowed for admin
+def get_users(): # only allowed for admin
+    return ["kaedon", "stm1_scanning_computer"]
 
 
 @app.get("/api/login")
@@ -77,13 +75,13 @@ def get_logout():
 
 
 @app.get("/api/admins")
-def get_admins():
-    return ["kaedon"]  # only allowed for admin
+def get_admins(): # only allowed for admin
+    return ["kaedon"]
 
 
 @app.put("/api/password/{user}")
-def put_password():
-    return "TODO: IMPLEMENT PASSWORDS"  # only allowed for admin
+def put_password(): # only allowed for admin
+    return "TODO: IMPLEMENT PASSWORDS"
 
 
 @app.get("/api/keys")
@@ -92,8 +90,8 @@ def get_api_keys():
         "key_id": {"note": "STM upload system.", "owner": "stm1"},
         "other_key_id": {
             "note": "STM upload system.",
-            "owner": "stm1",
-        },  # note: don't include owner unless the user is admin
+            "owner": "stm1", # note: don't include owner unless the user is admin
+        },
     }
 
 

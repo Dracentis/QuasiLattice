@@ -190,8 +190,7 @@ WantedBy={"multi-user.target" if system else "default.target"}
     _subprocess_run_logged([*systemctl, "daemon-reload"], check=True)
     _subprocess_run_logged([*systemctl, "enable", SERVICE_NAME], check=True)
     _subprocess_run_logged([*systemctl, "start", SERVICE_NAME], check=True)
-    if logger.getEffectiveLevel() <= 10:
-        logger.info("QuasiLattice systemd service setup successfully!")
+    logger.info("QuasiLattice systemd service setup successfully!")
 
 def remove_systemd_service(system: bool = False):
     system_service_path = os.path.join("/etc","systemd","system",f"{SERVICE_NAME}.service")
