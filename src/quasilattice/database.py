@@ -93,8 +93,8 @@ def validate_database(db_path=None):
                         time_created INTEGER,
                         edited_by TEXT,
                         created_by TEXT,
-                        is_admin INTEGER,
-                        can_create_entries INTEGER
+                        is_admin INTEGER NOT NULL,
+                        can_create_entries INTEGER NOT NULL
                     )""")
 
             # create api_keys table
@@ -108,8 +108,8 @@ def validate_database(db_path=None):
                         hashed_key TEXT NOT NULL,
                         time_edited INTEGER,
                         time_created INTEGER,
-                        owner TEXT,
-                        can_create_entries INTEGER,
+                        owner TEXT NOT NULL,
+                        can_create_entries INTEGER NOT NULL,
                         note TEXT,
                         FOREIGN KEY (owner) REFERENCES users(user)
                     )""")
@@ -157,7 +157,7 @@ def validate_database(db_path=None):
                         timestamp FLOAT NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
-                        hash BLOB,
+                        hash BLOB NOT NULL,
                         PRIMARY KEY (entry_hash, timestamp)
                     )""")
                 sql_cursor.execute("""
@@ -206,7 +206,7 @@ def validate_database(db_path=None):
                         time_edited INTEGER NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
-                        hash BLOB,
+                        hash BLOB NOT NULL,
                         PRIMARY KEY (entry_hash, entry_uuid, time_edited, read_access),
                         CHECK (
                             (entry_uuid IS NOT NULL AND entry_hash IS NULL)
@@ -233,7 +233,7 @@ def validate_database(db_path=None):
                         time_edited INTEGER NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
-                        hash BLOB,
+                        hash BLOB NOT NULL,
                         PRIMARY KEY (entry_hash, entry_uuid, time_edited, write_access),
                         CHECK (
                             (entry_uuid IS NOT NULL AND entry_hash IS NULL)
@@ -275,8 +275,13 @@ def validate_database(db_path=None):
                         FOREIGN KEY (parent_uuid) REFERENCES metadata_tree(uuid)
                     )""")
                 sql_cursor.execute("""
-                    CREATE INDEX index_metadata_tree_entry_hash ON metadata_tree(entry_hash)
+                    CREATE INDEX index_metadata_tree_entry_hash_key ON metadata_tree(entry_hash, key)
                 """)
+                sql_cursor.execute("""
+                    CREATE INDEX index_metadata_tree_entry_key_hash ON metadata_tree(key, entry_hash)
+                """)
+
+            update_info(sql_cursor)
 
             sql_connection.commit()
             sql_cursor.close()
@@ -321,12 +326,12 @@ def update_info(cursor: sqlite3.Cursor):
     database_schema_version_row = cursor.fetchone()
     if (
         database_schema_version_row is None
-        or database_schema_version_row["value"] != "1"
+        or database_schema_version_row[1] != "1"
     ):  # only accept the first schema (update this in future updates)
         found = (
             None
             if database_schema_version_row is None
-            else database_schema_version_row["value"]
+            else database_schema_version_row[1]
         )
         logger.critical(f"Expected database schema version 1, found {found}")
         raise RuntimeError(f"Expected database schema version 1, found {found}")
@@ -387,6 +392,39 @@ def write_user(cursor: sqlite3.Cursor, user_data: dict | sqlite3.Row | tuple):
     )
 
 
+def delete_user(cursor: sqlite3.Cursor, user: str, edited_by: str):
+    cursor.execute(
+        "SELECT id FROM api_keys WHERE owner = ?",
+        (user,),
+    )
+    for row in cursor.fetchall():
+        delete_api_key(cursor, row["id"], edited_by)
+    cursor.execute(
+        "SELECT * FROM read_access WHERE read_access = ?",
+        (user,),
+    )
+    # remove all read access granted to this user
+    for read_access_row in cursor.fetchall():
+        if read_access_row["entry_uuid"] is not None:
+            remove_read_access_by_uuid(cursor, read_access_row["entry_uuid"], user, edited_by)
+        elif read_access_row["entry_hash"] is not None:
+            remove_read_access_by_hash(cursor, read_access_row["entry_hash"], user, edited_by)
+    cursor.execute(
+        "SELECT * FROM write_access WHERE write_access = ?",
+        (user,),
+    )
+    # remove all write access granted to this user
+    for write_access_row in cursor.fetchall():
+        if write_access_row["entry_uuid"] is not None:
+            remove_write_access_by_uuid(cursor, write_access_row["entry_uuid"], user, edited_by)
+        elif write_access_row["entry_hash"] is not None:
+            remove_write_access_by_hash(cursor, write_access_row["entry_hash"], user, edited_by)
+    cursor.execute(
+        "DELETE FROM users WHERE user = ?",
+        (user,),
+    )
+
+
 def convert_user_to_tuple(user_data: dict | sqlite3.Row):
     return (
         user_data["user"],
@@ -428,13 +466,13 @@ def read_api_key_by_hashed_key(
 
 
 def read_api_keys_by_owner(
-    cursor: sqlite3.Cursor, owner: str, max_number_of_rows: int = 500
+    cursor: sqlite3.Cursor, owner: str, limit: int = 500
 ) -> list[sqlite3.Row]:
     cursor.execute(
         "SELECT * FROM api_keys WHERE owner = ? ORDER BY time_edited DESC LIMIT ?",
         (
             owner,
-            max_number_of_rows,
+            limit,
         ),
     )
     return cursor.fetchall()
@@ -446,6 +484,33 @@ def write_api_key(cursor: sqlite3.Cursor, api_key_data: dict | sqlite3.Row | tup
     cursor.execute(
         "INSERT OR REPLACE INTO api_keys VALUES(?, ?, ?, ?, ?, ?, ?) ",
         api_key_data,
+    )
+
+
+def delete_api_key(cursor: sqlite3.Cursor, api_key_id: str, edited_by: str):
+    cursor.execute(
+        "SELECT * FROM read_access WHERE read_access = ?",
+        (api_key_id,),
+    )
+    # remove all read access granted to this api_key
+    for read_access_row in cursor.fetchall():
+        if read_access_row["entry_uuid"] is not None:
+            remove_read_access_by_uuid(cursor, read_access_row["entry_uuid"], api_key_id, edited_by)
+        elif read_access_row["entry_hash"] is not None:
+            remove_read_access_by_hash(cursor, read_access_row["entry_hash"], api_key_id, edited_by)
+    cursor.execute(
+        "SELECT * FROM write_access WHERE write_access = ?",
+        (api_key_id,),
+    )
+    # remove all write access granted to this api_key
+    for write_access_row in cursor.fetchall():
+        if write_access_row["entry_uuid"] is not None:
+            remove_write_access_by_uuid(cursor, write_access_row["entry_uuid"], api_key_id, edited_by)
+        elif write_access_row["entry_hash"] is not None:
+            remove_write_access_by_hash(cursor, write_access_row["entry_hash"], api_key_id, edited_by)
+    cursor.execute(
+        "DELETE FROM api_keys WHERE id = ?",
+        (api_key_id,),
     )
 
 
@@ -627,9 +692,10 @@ def read_entry_rows_by_uuid(
                 ORDER BY latest.timestamp DESC, latest.entry_hash DESC
                 LIMIT 1
               )
-            ORDER BY entries.timestamp DESC, entries.hash DESC
+            ORDER BY {"entries.hash DESC" if order_by_hash else "entries.timestamp DESC, entries.hash DESC"}
+            LIMIT ?
             """,
-            entry_uuids,
+            (*entry_uuids, limit),
         )
     else:
         cursor.execute(
@@ -655,9 +721,10 @@ def read_entry_rows_by_uuid(
                 ORDER BY latest.timestamp DESC, latest.entry_hash DESC
                 LIMIT 1
             )
-            ORDER BY entries.timestamp DESC, entries.hash DESC
+            ORDER BY {"entries.hash DESC" if order_by_hash else "entries.timestamp DESC, entries.hash DESC"}
+            LIMIT ?
             """,
-            entry_uuids,
+            (*entry_uuids, limit),
         )
 
     return cursor.fetchall()
@@ -698,9 +765,10 @@ def read_entry_rows_by_hash(
             f"""
             SELECT * FROM entries
             WHERE hash IN ({",".join("?" for entry_uuid in entry_hashes)})
-            ORDER BY timestamp DESC, hash DESC
+            ORDER BY {"hash DESC" if order_by_hash else "timestamp DESC, hash DESC"}
+            LIMIT ?
             """,
-            entry_hashes,
+            (*entry_hashes, limit),
         )
     else:
         cursor.execute(
@@ -717,9 +785,10 @@ def read_entry_rows_by_hash(
                     ORDER BY latest.timestamp DESC, latest.entry_hash DESC
                     LIMIT 1
                 )
-            ORDER BY entries.timestamp DESC, entries.hash DESC
+            ORDER BY {"entries.hash DESC" if order_by_hash else "entries.timestamp DESC, entries.hash DESC"}
+            LIMIT ?
             """,
-            entry_hashes,
+            (*entry_hashes, limit),
         )
 
     return cursor.fetchall()
@@ -754,12 +823,13 @@ def read_entry_version_rows(
         and not quasilattice.config["archive_mode"]
     ):
         cursor.execute(
-            """
+            f"""
             SELECT * FROM entries
             WHERE uuid = ?
-            ORDER BY timestamp DESC, hash DESC
+            ORDER BY {"hash DESC" if order_by_hash else "timestamp DESC, hash DESC"}
+            LIMIT ?
             """,
-            (entry_uuid,),
+            (entry_uuid, limit),
         )
     else:
         cursor.execute(
@@ -776,9 +846,10 @@ def read_entry_version_rows(
                     ORDER BY latest.timestamp DESC
                     LIMIT 1
               )
-            ORDER BY entries.timestamp DESC, entries.hash DESC
+            ORDER BY {"entries.hash DESC" if order_by_hash else "entries.timestamp DESC, entries.hash DESC"}
+            LIMIT ?
             """,
-            (entry_uuid,),
+            (entry_uuid, limit),
         )
 
     return cursor.fetchall()
@@ -812,7 +883,55 @@ def read_entry_hashes_after_time(
     limit: int = 500,
     include_deleted: bool = False,
 ) -> list[bytes]:
-    pass  # TODO: implement
+    if include_deleted:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE timestamp > ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+            ORDER BY timestamp ASC, entry_hash DESC
+            LIMIT ?
+            """,
+            (after_timestamp, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE timestamp > ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+              AND (
+                    SELECT latest.is_deletion
+                    FROM edit_log AS latest
+                    WHERE latest.entry_hash = edit_log.entry_hash
+                    ORDER BY latest.timestamp DESC
+                    LIMIT 1
+              ) = 0
+            ORDER BY timestamp ASC, entry_hash DESC
+            LIMIT ?
+            """,
+            (after_timestamp, limit),
+        )
+
+    return [row["entry_hash"] for row in cursor.fetchall()]
 
 
 def read_entry_rows_after_time(
@@ -824,7 +943,7 @@ def read_entry_rows_after_time(
     entry_hashes = read_entry_hashes_after_time(
         cursor, after_timestamp, limit, include_deleted
     )
-    return read_entry_rows_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entries_after_time(
@@ -836,7 +955,7 @@ def read_entries_after_time(
     entry_hashes = read_entry_hashes_after_time(
         cursor, after_timestamp, limit, include_deleted
     )
-    return read_entries_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entries_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entry_hashes_before_time(
@@ -845,7 +964,55 @@ def read_entry_hashes_before_time(
     limit: int = 500,
     include_deleted: bool = False,
 ) -> list[bytes]:
-    pass  # TODO: implement
+    if include_deleted:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE timestamp < ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+            ORDER BY timestamp DESC, entry_hash DESC
+            LIMIT ?
+            """,
+            (before_timestamp, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE timestamp < ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+              AND (
+                    SELECT latest.is_deletion
+                    FROM edit_log AS latest
+                    WHERE latest.entry_hash = edit_log.entry_hash
+                    ORDER BY latest.timestamp DESC
+                    LIMIT 1
+              ) = 0
+            ORDER BY timestamp DESC, entry_hash DESC
+            LIMIT ?
+            """,
+            (before_timestamp, limit),
+        )
+
+    return [row["entry_hash"] for row in cursor.fetchall()]
 
 
 def read_entry_rows_before_time(
@@ -857,7 +1024,7 @@ def read_entry_rows_before_time(
     entry_hashes = read_entry_hashes_before_time(
         cursor, before_timestamp, limit, include_deleted
     )
-    return read_entry_rows_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entries_before_time(
@@ -869,16 +1036,64 @@ def read_entries_before_time(
     entry_hashes = read_entry_hashes_before_time(
         cursor, before_timestamp, limit, include_deleted
     )
-    return read_entries_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entries_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entry_hashes_after_hash(
     cursor: sqlite3.Cursor,
-    after_hash: hash,
+    after_hash: bytes,
     limit: int = 500,
     include_deleted: bool = False,
 ) -> list[bytes]:
-    pass  # TODO: implement
+    if include_deleted:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE entry_hash > ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+            ORDER BY entry_hash ASC
+            LIMIT ?
+            """,
+            (after_hash, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE entry_hash > ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+              AND (
+                    SELECT latest.is_deletion
+                    FROM edit_log AS latest
+                    WHERE latest.entry_hash = edit_log.entry_hash
+                    ORDER BY latest.timestamp DESC
+                    LIMIT 1
+              ) = 0
+            ORDER BY entry_hash ASC
+            LIMIT ?
+            """,
+            (after_hash, limit),
+        )
+
+    return [row["entry_hash"] for row in cursor.fetchall()]
 
 
 def read_entry_rows_after_hash(
@@ -890,7 +1105,7 @@ def read_entry_rows_after_hash(
     entry_hashes = read_entry_hashes_after_hash(
         cursor, after_hash, limit, include_deleted
     )
-    return read_entry_rows_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entries_after_hash(
@@ -902,7 +1117,7 @@ def read_entries_after_hash(
     entry_hashes = read_entry_hashes_after_hash(
         cursor, after_hash, limit, include_deleted
     )
-    return read_entries_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entries_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entry_hashes_before_hash(
@@ -911,7 +1126,55 @@ def read_entry_hashes_before_hash(
     limit: int = 500,
     include_deleted: bool = False,
 ) -> list[bytes]:
-    pass  # TODO: implement
+    if include_deleted:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE entry_hash < ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+            ORDER BY entry_hash DESC
+            LIMIT ?
+            """,
+            (before_hash, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT entry_hash
+            FROM edit_log
+            WHERE entry_hash < ?
+              AND is_deletion = 0
+              AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT oldest.timestamp, oldest.entry_hash
+                    FROM edit_log AS oldest
+                    WHERE oldest.entry_hash = edit_log.entry_hash
+                      AND oldest.is_deletion = 0
+                    ORDER BY oldest.timestamp ASC
+                    LIMIT 1
+              )
+              AND (
+                    SELECT latest.is_deletion
+                    FROM edit_log AS latest
+                    WHERE latest.entry_hash = edit_log.entry_hash
+                    ORDER BY latest.timestamp DESC
+                    LIMIT 1
+              ) = 0
+            ORDER BY entry_hash DESC
+            LIMIT ?
+            """,
+            (before_hash, limit),
+        )
+
+    return [row["entry_hash"] for row in cursor.fetchall()]
 
 
 def read_entry_rows_before_hash(
@@ -923,7 +1186,7 @@ def read_entry_rows_before_hash(
     entry_hashes = read_entry_hashes_before_hash(
         cursor, before_hash, limit, include_deleted
     )
-    return read_entry_rows_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entries_before_hash(
@@ -935,7 +1198,7 @@ def read_entries_before_hash(
     entry_hashes = read_entry_hashes_before_hash(
         cursor, before_hash, limit, include_deleted
     )
-    return read_entries_by_hash(cursor, entry_hashes, include_deleted)
+    return read_entries_by_hash(cursor, entry_hashes, limit, include_deleted)
 
 
 def read_entries_by_filter(
@@ -950,11 +1213,7 @@ def read_entries_by_filter(
     return [
         convert_entry_row_to_dict(row)
         for row in read_entry_rows_by_filter(
-            cursor,
-            filter,
-            limit,
-            include_outdated,
-            include_deleted,
+            cursor, filter, limit, include_outdated, include_deleted, order_by_hash
         )
     ]
 
@@ -967,67 +1226,79 @@ def read_entry_rows_by_filter(
     include_deleted: bool = False,
     order_by_hash: bool = False,
 ) -> list[sqlite3.Row]:
-    """Returns a list of all (not deleted and not outdated) entry rows that match the filter.
-    Filters are written as a comma separated list with the format: property.path__op=value,
-
-    Here's a few filter strings as examples:
-    is_file=True,time_edited__lt=1685728424
-    time_edited__lte=1685728424,title__in=["potat","otherpotat"]
-    time_edited__gt=1685728424
-    time_edited__gte=1685728424
-    content__contains="word"
-    content__icontains="potato"
-    """
-
-# EXAMPLE SQL statement from internet:
-    cursor.execute("""
-        SELECT c.customer_id
-FROM customers c
-WHERE c.state = 'MI'
-  AND EXISTS (
-      SELECT 1
-      FROM orders o
-      WHERE o.customer_id = c.customer_id
-        AND o.money >= 55
-  )
-  AND EXISTS (
-      SELECT 1
-      FROM orders o
-      WHERE o.customer_id = c.customer_id
-        AND o.order_date >= '2026-01-01'
-  )
-  AND EXISTS (
-      SELECT 1
-      FROM orders o
-      WHERE o.customer_id = c.customer_id
-        AND o.last_login_date >= '2025-05-04'
-  );
-
-    """)
-
-    # TODO: implement this function
-
+    """Returns a list of all (not deleted and not outdated) entry rows that match the filter. Filters are written as a comma separated list with the format: property.path__op=value,"""
     conditions = _parse_entry_filter(filter)
-    if not conditions:
-        return candidate_rows
-
     if include_outdated:
-        if include_deleted:
-            pass
-        else:
-            pass
+        sql_command = (
+            "SELECT DISTINCT tree.entry_hash FROM metadata_tree AS tree WHERE 1=1 "
+        )
     else:
-        if include_deleted:
-            pass
-        else:
-            pass
+        sql_command = """
+        WITH hashes AS (
+            SELECT DISTINCT entry_hash FROM metadata_tree
+        ),
+        edit AS (
+            SELECT
+                hashes.entry_hash,
+                (
+                    SELECT entry_uuid
+                    FROM edit_log
+                    WHERE entry_hash = hashes.entry_hash
+                    LIMIT 1
+                ) AS entry_uuid 
+            FROM hashes
+        )
+        SELECT tree.entry_hash FROM hashes AS tree 
+        JOIN edit ON edit.entry_hash = tree.entry_hash 
+        WHERE 1=1 
+        """
+    parameters = []
+    for path, op, value in conditions:
+        sql_command += "AND EXISTS ( SELECT 1 FROM metadata_tree WHERE entry_hash = tree.entry_hash AND key = ? "
+        parameters.append(path[-1])
+        if op != "exists":
+            sql_command += "AND value"
+            if op == "lt":
+                sql_command += " < "
+            elif op == "lte":
+                sql_command += " <= "
+            elif op == "gt":
+                sql_command += " > "
+            elif op == "gte":
+                sql_command += " >= "
+            elif op == "eq":
+                sql_command += " = "
+            elif op == "contains":
+                sql_command += " LIKE "
+            sql_command += "? "
+            parameters.append(value)
+        sql_command += ") "
+        # TODO: account for len(path) > 1
+    if not include_outdated:
+        sql_command += """
+            AND (
+                edit.entry_uuid IS NULL 
+                OR tree.entry_hash = ( 
+                    SELECT entry_hash FROM edit_log 
+                    WHERE entry_uuid = edit.entry_uuid
+                      AND is_deletion = 0
+                    ORDER BY timestamp DESC
+                    LIMIT 1 
+                )
+            )
+            """
+    sql_command += "LIMIT ?"
+    parameters.append(limit)
+    logger.debug("Constructed filter SQL statement: " + sql_command)
 
-
-_FILTER_OPS = {"lt", "lte", "gt", "gte", "in", "contains", "icontains", "eq", "exists"}
+    cursor.execute(sql_command, parameters)
+    entry_hashes = [row["entry_hash"] for row in cursor.fetchall()]
+    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted, order_by_hash)
 
 
 def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
-    """Parses a filter string into a list of (property_path, op, value) tuples."""
+    """Parses a filter string into a list of (path, op, value) tuples."""
+    logger.debug("Parsing entry filter: " + filter)
     conditions = []
     if not filter or not filter.strip():
         return conditions
@@ -1042,7 +1313,7 @@ def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
         # extract op
         if "__" in key_part:
             path, op = key_part.rsplit("__", 1)
-            if op not in _FILTER_OPS or not path:
+            if op not in {"lt", "lte", "gt", "gte", "eq", "contains", "exists"}:
                 path, op = key_part, "eq"
         else:
             path, op = key_part, "eq"
@@ -1050,7 +1321,7 @@ def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
 
         # extract value
         if value_part == "" and op == "eq":
-            op = "exists"
+            op, value = "exists", ""
         else:
             try:
                 value = json.loads(value_part)
@@ -1620,7 +1891,7 @@ def convert_edit_log_to_tuple(edit_log: dict | sqlite3.Row) -> tuple:
 
 
 def convert_edit_log_to_dict(edit_log_tuple: sqlite3.Row | tuple) -> dict:
-    alias_dict = {
+    edit_log_dict = {
         "entry_hash": edit_log_tuple[0],
         "entry_uuid": edit_log_tuple[1],
         "is_deletion": edit_log_tuple[2],
@@ -1628,7 +1899,7 @@ def convert_edit_log_to_dict(edit_log_tuple: sqlite3.Row | tuple) -> dict:
         "edited_by": edit_log_tuple[4],
         "api_key_id": edit_log_tuple[5],
     }
-    return normalize_edit_log(alias_dict)
+    return normalize_edit_log(edit_log_dict)
 
 
 # endregion
@@ -2008,6 +2279,35 @@ def remove_alias_by_hash(
             )
 
 
+def remove_alias(
+    cursor: sqlite3.Cursor,
+    alias: str,
+    edited_by: str,
+    api_key_id: str | None = None,
+):
+    existing_aliases = read_alias_row(cursor, alias)
+    if existing_aliases is not None:  # should remove alias
+        if (
+            "archive_mode" in quasilattice.config
+            and not quasilattice.config["archive_mode"]
+        ):
+            # delete existing alias
+            cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
+        else:
+            # mark alias deleted
+            write_alias_row(
+                cursor,
+                {
+                    "entry_hash": None,
+                    "entry_uuid": None,
+                    "alias": alias,
+                    "time_edited": int(time.time()),
+                    "edited_by": edited_by,
+                    "api_key_id": api_key_id,
+                },
+            )
+
+
 def write_default_alias_by_uuid(
     cursor: sqlite3.Cursor,
     entry_uuid: bytes,
@@ -2052,8 +2352,8 @@ def _generate_unique_default_alias_str(cursor: sqlite3.Cursor) -> str:
         raise ValueError("Duplicate characters in default_alias_characters")
 
     if len(chars) < 2:
-        logger.critical("To few characters in default_alias_characters")
-        raise ValueError("To few characters in default_alias_characters")
+        logger.critical("Too few characters in default_alias_characters")
+        raise ValueError("Too few characters in default_alias_characters")
 
     # blindly try to find a unique alias with the current_default_alias_length
     while time.time() - alias_generation_start < timeout_ms / 1000.0:
@@ -3137,7 +3437,7 @@ def _delete_outdated_write_access_if_not_in_archive_mode(cursor: sqlite3.Cursor)
 
 
 # region linked_files
-def get_linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
+def linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
     """Return a path to a valid linked file or None."""
 
     cursor.execute(
@@ -3164,7 +3464,7 @@ def get_linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
                 for chunk in iter(lambda: f.read(8192), b""):
                     sha256.update(chunk)
         except OSError:
-            return None  # failed to calcualte hash
+            return None  # failed to calculate hash
         if sha256.digest() == file_hash:
             link_file(cursor, file_hash, file_path, False)
         else:
@@ -3185,7 +3485,7 @@ def link_file(cursor, file_hash: bytes, path_to_file: str, verify: bool = True) 
                 for chunk in iter(lambda: f.read(8192), b""):
                     sha256.update(chunk)
         except OSError:
-            return False  # failed to calcualte hash
+            return False  # failed to calculate hash
         if sha256.digest() != file_hash:
             return False  # hash doesn't match
 

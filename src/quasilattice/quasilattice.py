@@ -121,7 +121,6 @@ def init(
 
     # init database
     database.validate_database()
-    database.update_info()
 
     # create files directory
     os.makedirs(config["quasilattice"]["files_dir"], exist_ok=True)

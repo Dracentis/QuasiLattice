@@ -59,11 +59,6 @@ def get_api():
     return app.openapi()
 
 
-@app.get("/api/users")
-def get_users(): # only allowed for admin
-    return ["kaedon", "stm1_scanning_computer"]
-
-
 @app.get("/api/login")
 def get_login():
     return "TODO: IMPLEMENT LOGIN"
@@ -74,14 +69,9 @@ def get_logout():
     return "TODO: IMPLEMENT LOGOUT"
 
 
-@app.get("/api/admins")
-def get_admins(): # only allowed for admin
-    return ["kaedon"]
-
-
-@app.put("/api/password/{user}")
-def put_password(): # only allowed for admin
-    return "TODO: IMPLEMENT PASSWORDS"
+@app.get("/api/users") # MAKE THIS MORE RESTful
+def get_users(): # only allowed for admin
+    return ["kaedon", "stm1_scanning_computer"]
 
 
 @app.get("/api/keys")
