@@ -474,7 +474,7 @@ def normalize_user(user_data: dict | sqlite3.Row | tuple) -> dict:
         "timestamp": float(user_data["timestamp"]),
         "edited_by": str(user_data["edited_by"]),
         "created_by": str(user_data["created_by"])
-        if user_data["hashed_password"] is not None
+        if user_data["created_by"] is not None
         else None,
         "is_deleted": bool(user_data["is_deleted"]),
         "is_admin": bool(user_data["is_admin"]),
