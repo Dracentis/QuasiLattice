@@ -350,10 +350,10 @@ def run(
             time.sleep(1800)  # sleep to keep the process running
 
 
-def get_entry(uuid: bytes) -> dict | None:
+def entry(uuid_alias: str | bytes) -> dict | None:
     with database.connection() as connection:
         cursor = connection.cursor()
-        row = database.read_entry_row(cursor, uuid)
+        row = database.read_entry_row(cursor, uuid_alias)
         connection.commit()
         cursor.close()
 

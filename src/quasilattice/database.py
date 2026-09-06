@@ -54,6 +54,7 @@ def validate_database(db_path=None):
         return
     try:
         with sqlite3.connect(db_path) as sql_connection:
+            sql_connection.row_factory = sqlite3.Row
             sql_cursor = sql_connection.cursor()
 
             # enforce foreign key constraints (off by default in sqlite)
@@ -87,14 +88,16 @@ def validate_database(db_path=None):
             if sql_cursor.fetchone() == None:
                 sql_cursor.execute("""
                     CREATE TABLE users (
-                        user TEXT PRIMARY KEY NOT NULL,
+                        user TEXT NOT NULL,
                         hashed_password TEXT,
-                        time_edited INTEGER,
-                        time_created INTEGER,
+                        timestamp FLOAT NOT NULL,
                         edited_by TEXT,
                         created_by TEXT,
+                        is_deleted INTEGER NOT NULL,
                         is_admin INTEGER NOT NULL,
-                        can_create_entries INTEGER NOT NULL
+                        can_create_entries INTEGER NOT NULL,
+                        hash BLOB NOT NULL,
+                        PRIMARY KEY (user, timestamp)
                     )""")
 
             # create api_keys table
@@ -104,17 +107,18 @@ def validate_database(db_path=None):
             if sql_cursor.fetchone() == None:
                 sql_cursor.execute("""
                     CREATE TABLE api_keys (
-                        id TEXT PRIMARY KEY NOT NULL,
+                        id TEXT NOT NULL,
                         hashed_key TEXT NOT NULL,
-                        time_edited INTEGER,
-                        time_created INTEGER,
+                        timestamp FLOAT NOT NULL,
                         owner TEXT NOT NULL,
+                        is_deleted INTEGER NOT NULL,
                         can_create_entries INTEGER NOT NULL,
                         note TEXT,
-                        FOREIGN KEY (owner) REFERENCES users(user)
+                        hash BLOB NOT NULL,
+                        PRIMARY KEY (id, timestamp)
                     )""")
                 sql_cursor.execute("""
-                    CREATE INDEX index_api_keys_owner_time ON api_keys(owner, time_edited DESC);
+                    CREATE INDEX index_api_keys_owner_time ON api_keys(owner, timestamp DESC);
                 """)
 
             # create entries table
@@ -179,18 +183,18 @@ def validate_database(db_path=None):
                         entry_hash BLOB,
                         entry_uuid BLOB,
                         alias TEXT NOT NULL,
-                        time_edited INTEGER NOT NULL,
+                        timestamp FLOAT NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
                         hash BLOB NOT NULL,
-                        PRIMARY KEY (alias, time_edited)
+                        PRIMARY KEY (alias, timestamp)
                         CHECK (entry_uuid IS NULL OR entry_hash IS NULL)
                     )""")
                 sql_cursor.execute(
-                    "CREATE INDEX index_aliases_entry_uuid ON aliases(entry_uuid, time_edited)"
+                    "CREATE INDEX index_aliases_entry_uuid ON aliases(entry_uuid, timestamp)"
                 )
                 sql_cursor.execute(
-                    "CREATE INDEX index_aliases_entry_hash ON aliases(entry_hash, time_edited)"
+                    "CREATE INDEX index_aliases_entry_hash ON aliases(entry_hash, timestamp)"
                 )
 
             # create read_access table
@@ -203,11 +207,11 @@ def validate_database(db_path=None):
                         entry_hash BLOB,
                         entry_uuid BLOB,
                         read_access TEXT,
-                        time_edited INTEGER NOT NULL,
+                        timestamp FLOAT NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
                         hash BLOB NOT NULL,
-                        PRIMARY KEY (entry_hash, entry_uuid, time_edited, read_access),
+                        PRIMARY KEY (entry_hash, entry_uuid, timestamp, read_access),
                         CHECK (
                             (entry_uuid IS NOT NULL AND entry_hash IS NULL)
                             OR (entry_uuid IS NULL AND entry_hash IS NOT NULL)
@@ -217,7 +221,7 @@ def validate_database(db_path=None):
                     "CREATE INDEX index_read_access_read_access ON read_access(read_access)"
                 )
                 sql_cursor.execute(
-                    "CREATE INDEX index_read_access_time_edited ON read_access(time_edited)"
+                    "CREATE INDEX index_read_access_timestamp ON read_access(timestamp)"
                 )
 
             # create write_access table
@@ -230,11 +234,11 @@ def validate_database(db_path=None):
                         entry_hash BLOB,
                         entry_uuid BLOB,
                         write_access TEXT,
-                        time_edited INTEGER NOT NULL,
+                        timestamp FLOAT NOT NULL,
                         edited_by TEXT,
                         api_key_id TEXT,
                         hash BLOB NOT NULL,
-                        PRIMARY KEY (entry_hash, entry_uuid, time_edited, write_access),
+                        PRIMARY KEY (entry_hash, entry_uuid, timestamp, write_access),
                         CHECK (
                             (entry_uuid IS NOT NULL AND entry_hash IS NULL)
                             OR (entry_uuid IS NULL AND entry_hash IS NOT NULL)
@@ -244,7 +248,7 @@ def validate_database(db_path=None):
                     "CREATE INDEX index_write_access_write_access ON write_access(write_access)"
                 )
                 sql_cursor.execute(
-                    "CREATE INDEX index_write_access_time_edited ON write_access(time_edited)"
+                    "CREATE INDEX index_write_access_timestamp ON write_access(timestamp)"
                 )
 
             # create linked_files table
@@ -326,12 +330,12 @@ def update_info(cursor: sqlite3.Cursor):
     database_schema_version_row = cursor.fetchone()
     if (
         database_schema_version_row is None
-        or database_schema_version_row[1] != "1"
+        or database_schema_version_row["value"] != "1"
     ):  # only accept the first schema (update this in future updates)
         found = (
             None
             if database_schema_version_row is None
-            else database_schema_version_row[1]
+            else database_schema_version_row["value"]
         )
         logger.critical(f"Expected database schema version 1, found {found}")
         raise RuntimeError(f"Expected database schema version 1, found {found}")
@@ -362,7 +366,7 @@ def update_info(cursor: sqlite3.Cursor):
 # region users
 def read_user(cursor: sqlite3.Cursor, user: str) -> sqlite3.Row | None:
     cursor.execute(
-        "SELECT * FROM users WHERE user = ?",
+        "SELECT * FROM users WHERE user = ? ORDER BY timestamp DESC LIMIT 1",
         (user,),
     )
     return cursor.fetchone()
@@ -378,64 +382,139 @@ def write_user(cursor: sqlite3.Cursor, user_data: dict | sqlite3.Row | tuple):
         user_data = convert_user_to_tuple(user_data)
     cursor.execute(
         """
-        INSERT INTO users VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user) DO UPDATE SET
-           hashed_password = excluded.hashed_password,
-           time_edited = excluded.time_edited,
-           time_created = excluded.time_created,
-           edited_by = excluded.edited_by,
-           created_by = excluded.created_by,
-           is_admin = excluded.is_admin,
-           can_create_entries = excluded.can_create_entries
+        INSERT OR REPLACE INTO users VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         user_data,
     )
+    if (
+        "archive_mode" in quasilattice.config
+        and not quasilattice.config["archive_mode"]
+    ):
+        # delete outdated rows
+        cursor.execute(
+            """
+            DELETE FROM users AS users1
+            WHERE users1.timestamp < (
+                SELECT MAX(timestamp) FROM users WHERE user = users1.user
+            )
+            """
+        )
 
 
-def delete_user(cursor: sqlite3.Cursor, user: str, edited_by: str):
-    cursor.execute(
-        "SELECT id FROM api_keys WHERE owner = ?",
-        (user,),
+def delete_user(
+    cursor: sqlite3.Cursor,
+    user: str,
+    edited_by: str,
+    delete_api_keys: bool = False,
+    delete_access: bool = False,
+):
+    user_data = read_user(cursor, user)
+    if user_data is None or user_data["is_deleted"]:
+        return  # user already deleted
+    if delete_api_keys:
+        cursor.execute(
+            "SELECT DISTINCT id FROM api_keys WHERE owner = ?",
+            (user,),
+        )
+        # delete all api keys
+        for row in cursor.fetchall():
+            delete_api_key(cursor, row["id"], edited_by, delete_access)
+    if delete_access:
+        cursor.execute(
+            "SELECT DISTINCT entry_hash, entry_uuid FROM read_access WHERE read_access = ?",
+            (user,),
+        )
+        # remove all read access granted to this user
+        for read_access_row in cursor.fetchall():
+            if read_access_row["entry_uuid"] is not None:
+                remove_read_access_by_uuid(
+                    cursor, read_access_row["entry_uuid"], user, edited_by
+                )
+            elif read_access_row["entry_hash"] is not None:
+                remove_read_access_by_hash(
+                    cursor, read_access_row["entry_hash"], user, edited_by
+                )
+        cursor.execute(
+            "SELECT DISTINCT entry_hash, entry_uuid FROM write_access WHERE write_access = ?",
+            (user,),
+        )
+        # remove all write access granted to this user
+        for write_access_row in cursor.fetchall():
+            if write_access_row["entry_uuid"] is not None:
+                remove_write_access_by_uuid(
+                    cursor, write_access_row["entry_uuid"], user, edited_by
+                )
+            elif write_access_row["entry_hash"] is not None:
+                remove_write_access_by_hash(
+                    cursor, write_access_row["entry_hash"], user, edited_by
+                )
+    write_user(
+        cursor,
+        {
+            "user": user_data["user"],
+            "hashed_password": user_data["hashed_password"],
+            "timestamp": time.time(),
+            "edited_by": edited_by,
+            "created_by": user_data["created_by"],
+            "is_deleted": True,
+            "is_admin": user_data["is_admin"],
+            "can_create_entries": user_data["can_create_entries"],
+        },
     )
-    for row in cursor.fetchall():
-        delete_api_key(cursor, row["id"], edited_by)
-    cursor.execute(
-        "SELECT * FROM read_access WHERE read_access = ?",
-        (user,),
-    )
-    # remove all read access granted to this user
-    for read_access_row in cursor.fetchall():
-        if read_access_row["entry_uuid"] is not None:
-            remove_read_access_by_uuid(cursor, read_access_row["entry_uuid"], user, edited_by)
-        elif read_access_row["entry_hash"] is not None:
-            remove_read_access_by_hash(cursor, read_access_row["entry_hash"], user, edited_by)
-    cursor.execute(
-        "SELECT * FROM write_access WHERE write_access = ?",
-        (user,),
-    )
-    # remove all write access granted to this user
-    for write_access_row in cursor.fetchall():
-        if write_access_row["entry_uuid"] is not None:
-            remove_write_access_by_uuid(cursor, write_access_row["entry_uuid"], user, edited_by)
-        elif write_access_row["entry_hash"] is not None:
-            remove_write_access_by_hash(cursor, write_access_row["entry_hash"], user, edited_by)
-    cursor.execute(
-        "DELETE FROM users WHERE user = ?",
-        (user,),
-    )
+
+
+def normalize_user(user_data: dict | sqlite3.Row | tuple) -> dict:
+    if isinstance(user_data, tuple):
+        return convert_user_to_dict(user_data)
+    return {
+        "user": str(user_data["user"]),
+        "hashed_password": str(user_data["hashed_password"])
+        if user_data["hashed_password"] is not None
+        else None,
+        "timestamp": float(user_data["timestamp"]),
+        "edited_by": str(user_data["edited_by"]),
+        "created_by": str(user_data["created_by"])
+        if user_data["hashed_password"] is not None
+        else None,
+        "is_deleted": bool(user_data["is_deleted"]),
+        "is_admin": bool(user_data["is_admin"]),
+        "can_create_entries": bool(user_data["can_create_entries"]),
+    }
+
+
+def calculate_user_hash(user_data: dict | sqlite3.Row | tuple) -> bytes:
+    hashable_dict = normalize_user(user_data)
+    hashable_bytes = rfc8785.dumps(hashable_dict)
+    return hashlib.sha256(hashable_bytes).digest()
 
 
 def convert_user_to_tuple(user_data: dict | sqlite3.Row):
+    user_dict = normalize_user(user_data)
     return (
-        user_data["user"],
-        user_data["hashed_password"],
-        user_data["time_edited"],
-        user_data["time_created"],
-        user_data["edited_by"],
-        user_data["created_by"],
-        user_data["is_admin"],
-        user_data["can_create_entries"],
+        user_dict["user"],
+        user_dict["hashed_password"],
+        user_dict["timestamp"],
+        user_dict["edited_by"],
+        user_dict["created_by"],
+        user_dict["is_deleted"],
+        user_dict["is_admin"],
+        user_dict["can_create_entries"],
+        calculate_user_hash(user_dict),
     )
+
+
+def convert_user_to_dict(user_tuple: sqlite3.Row | tuple) -> dict:
+    user_dict = {
+        "user": user_tuple[0],
+        "hashed_password": user_tuple[1],
+        "timestamp": user_tuple[2],
+        "edited_by": user_tuple[3],
+        "created_by": user_tuple[4],
+        "is_deleted": user_tuple[5],
+        "is_admin": user_tuple[6],
+        "can_create_entries": user_tuple[7],
+    }
+    return normalize_user(user_dict)
 
 
 # endregion
@@ -444,7 +523,7 @@ def convert_user_to_tuple(user_data: dict | sqlite3.Row):
 # region api_keys
 def read_api_key(cursor: sqlite3.Cursor, id: str) -> sqlite3.Row | None:
     cursor.execute(
-        "SELECT * FROM api_keys WHERE id = ?",
+        "SELECT * FROM api_keys WHERE id = ? ORDER BY timestamp DESC LIMIT 1",
         (id,),
     )
     return cursor.fetchone()
@@ -459,7 +538,7 @@ def read_api_key_by_hashed_key(
     cursor: sqlite3.Cursor, hashed_key: str
 ) -> sqlite3.Row | None:
     cursor.execute(
-        "SELECT * FROM api_keys WHERE hashed_key = ?",
+        "SELECT * FROM api_keys WHERE hashed_key = ? ORDER BY timestamp DESC LIMIT 1",
         (hashed_key,),
     )
     return cursor.fetchone()
@@ -469,7 +548,7 @@ def read_api_keys_by_owner(
     cursor: sqlite3.Cursor, owner: str, limit: int = 500
 ) -> list[sqlite3.Row]:
     cursor.execute(
-        "SELECT * FROM api_keys WHERE owner = ? ORDER BY time_edited DESC LIMIT ?",
+        "SELECT * FROM api_keys WHERE owner = ? ORDER BY timestamp DESC LIMIT ?",
         (
             owner,
             limit,
@@ -482,48 +561,118 @@ def write_api_key(cursor: sqlite3.Cursor, api_key_data: dict | sqlite3.Row | tup
     if isinstance(api_key_data, dict):
         api_key_data = convert_api_key_to_tuple(api_key_data)
     cursor.execute(
-        "INSERT OR REPLACE INTO api_keys VALUES(?, ?, ?, ?, ?, ?, ?) ",
+        "INSERT OR REPLACE INTO api_keys VALUES(?, ?, ?, ?, ?, ?, ?, ?) ",
         api_key_data,
     )
+    if (
+        "archive_mode" in quasilattice.config
+        and not quasilattice.config["archive_mode"]
+    ):
+        # delete outdated rows
+        cursor.execute(
+            """
+            DELETE FROM api_keys AS api_keys1
+            WHERE api_keys1.timestamp < (
+                SELECT MAX(timestamp) FROM api_keys WHERE id = api_keys1.id
+            )
+            """
+        )
 
 
-def delete_api_key(cursor: sqlite3.Cursor, api_key_id: str, edited_by: str):
-    cursor.execute(
-        "SELECT * FROM read_access WHERE read_access = ?",
-        (api_key_id,),
+def delete_api_key(
+    cursor: sqlite3.Cursor, api_key_id: str, edited_by: str, delete_access: bool = False
+):
+    api_key_data = read_api_key(cursor, api_key_id)
+    if api_key_data is None or api_key_data["is_deleted"]:
+        return  # api_key already deleted
+    if delete_access:
+        cursor.execute(
+            "SELECT * FROM read_access WHERE read_access = ?",
+            (api_key_id,),
+        )
+        # remove all read access granted to this api_key
+        for read_access_row in cursor.fetchall():
+            if read_access_row["entry_uuid"] is not None:
+                remove_read_access_by_uuid(
+                    cursor, read_access_row["entry_uuid"], api_key_id, edited_by
+                )
+            elif read_access_row["entry_hash"] is not None:
+                remove_read_access_by_hash(
+                    cursor, read_access_row["entry_hash"], api_key_id, edited_by
+                )
+        cursor.execute(
+            "SELECT * FROM write_access WHERE write_access = ?",
+            (api_key_id,),
+        )
+        # remove all write access granted to this api_key
+        for write_access_row in cursor.fetchall():
+            if write_access_row["entry_uuid"] is not None:
+                remove_write_access_by_uuid(
+                    cursor, write_access_row["entry_uuid"], api_key_id, edited_by
+                )
+            elif write_access_row["entry_hash"] is not None:
+                remove_write_access_by_hash(
+                    cursor, write_access_row["entry_hash"], api_key_id, edited_by
+                )
+    write_api_key(
+        cursor,
+        {
+            "id": api_key_data["id"],
+            "hashed_key": api_key_data["hashed_key"],
+            "timestamp": time.time(),
+            "owner": api_key_data["owner"],
+            "is_deleted": True,
+            "can_create_entries": api_key_data["can_create_entries"],
+            "note": api_key_data["note"],
+        },
     )
-    # remove all read access granted to this api_key
-    for read_access_row in cursor.fetchall():
-        if read_access_row["entry_uuid"] is not None:
-            remove_read_access_by_uuid(cursor, read_access_row["entry_uuid"], api_key_id, edited_by)
-        elif read_access_row["entry_hash"] is not None:
-            remove_read_access_by_hash(cursor, read_access_row["entry_hash"], api_key_id, edited_by)
-    cursor.execute(
-        "SELECT * FROM write_access WHERE write_access = ?",
-        (api_key_id,),
-    )
-    # remove all write access granted to this api_key
-    for write_access_row in cursor.fetchall():
-        if write_access_row["entry_uuid"] is not None:
-            remove_write_access_by_uuid(cursor, write_access_row["entry_uuid"], api_key_id, edited_by)
-        elif write_access_row["entry_hash"] is not None:
-            remove_write_access_by_hash(cursor, write_access_row["entry_hash"], api_key_id, edited_by)
-    cursor.execute(
-        "DELETE FROM api_keys WHERE id = ?",
-        (api_key_id,),
-    )
+
+
+def normalize_api_key(api_key_data: dict | sqlite3.Row | tuple) -> dict:
+    if isinstance(api_key_data, tuple):
+        return convert_api_key_to_dict(api_key_data)
+    return {
+        "id": str(api_key_data["id"]),
+        "hashed_key": str(api_key_data["hashed_key"]),
+        "timestamp": float(api_key_data["timestamp"]),
+        "owner": str(api_key_data["owner"]),
+        "is_deleted": bool(api_key_data["is_deleted"]),
+        "can_create_entries": bool(api_key_data["can_create_entries"]),
+        "note": str(api_key_data["note"]) if api_key_data["note"] is not None else None,
+    }
+
+
+def calculate_api_key_hash(api_key_data: dict | sqlite3.Row | tuple) -> bytes:
+    hashable_dict = normalize_api_key(api_key_data)
+    hashable_bytes = rfc8785.dumps(hashable_dict)
+    return hashlib.sha256(hashable_bytes).digest()
 
 
 def convert_api_key_to_tuple(api_key_data: dict | sqlite3.Row):
+    api_key_dict = normalize_api_key(api_key_data)
     return (
-        api_key_data["id"],
-        api_key_data["hashed_key"],
-        api_key_data["time_edited"],
-        api_key_data["time_created"],
-        api_key_data["owner"],
-        api_key_data["can_create_entries"],
-        api_key_data["note"],
+        api_key_dict["id"],
+        api_key_dict["hashed_key"],
+        api_key_dict["timestamp"],
+        api_key_dict["owner"],
+        api_key_dict["is_deleted"],
+        api_key_dict["can_create_entries"],
+        api_key_dict["note"],
+        calculate_api_key_hash(api_key_dict),
     )
+
+
+def convert_api_key_to_dict(api_key_tuple: sqlite3.Row | tuple) -> dict:
+    api_key_dict = {
+        "id": api_key_tuple[0],
+        "hashed_key": api_key_tuple[1],
+        "timestamp": api_key_tuple[2],
+        "owner": api_key_tuple[3],
+        "is_deleted": api_key_tuple[4],
+        "can_create_entries": api_key_tuple[5],
+        "note": api_key_tuple[6],
+    }
+    return normalize_api_key(api_key_dict)
 
 
 # endregion
@@ -1293,7 +1442,9 @@ def read_entry_rows_by_filter(
 
     cursor.execute(sql_command, parameters)
     entry_hashes = [row["entry_hash"] for row in cursor.fetchall()]
-    return read_entry_rows_by_hash(cursor, entry_hashes, limit, include_deleted, order_by_hash)
+    return read_entry_rows_by_hash(
+        cursor, entry_hashes, limit, include_deleted, order_by_hash
+    )
 
 
 def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
@@ -1386,7 +1537,7 @@ def write_entry_dict(
         validated_timestamp = new_timestamp
         if (
             validated_timestamp is None
-            or validated_timestamp > time.time()
+            or validated_timestamp + 1 > time.time()  # 1 second of leniency
             or (
                 edit_log_row is not None
                 and edit_log_row["timestamp"] > validated_timestamp
@@ -1434,22 +1585,24 @@ def delete_entry_by_uuid(
     edited_by: str,
     api_key_id: str | None = None,
 ):
-    if "archive_mode" not in quasilattice.config or quasilattice.config["archive_mode"]:
-        entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
-        current_time = time.time()
-        for entry_hash in entry_version_hashes:
-            write_edit_log(
-                cursor,
-                {
-                    "entry_hash": entry_hash,
-                    "entry_uuid": entry_uuid,
-                    "is_deletion": True,
-                    "timestamp": current_time,
-                    "edited_by": edited_by,
-                    "api_key_id": api_key_id,
-                },
-            )
-    else:
+    entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
+    current_time = time.time()
+    for entry_hash in entry_version_hashes:
+        write_edit_log(
+            cursor,
+            {
+                "entry_hash": entry_hash,
+                "entry_uuid": entry_uuid,
+                "is_deletion": True,
+                "timestamp": current_time,
+                "edited_by": edited_by,
+                "api_key_id": api_key_id,
+            },
+        )
+    if (
+        "archive_mode" in quasilattice.config
+        and not quasilattice.config["archive_mode"]
+    ):
         entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
         if len(entry_version_hashes) > 0:
             cursor.execute(
@@ -1457,8 +1610,8 @@ def delete_entry_by_uuid(
                 (entry_uuid,),
             )
             cursor.execute(
-                "DELETE FROM edit_log WHERE entry_uuid = ?",
-                (entry_uuid,),
+                "DELETE FROM edit_log WHERE entry_uuid = ? AND timestamp < ?",
+                (entry_uuid, current_time),
             )
             cursor.execute(
                 "DELETE FROM aliases WHERE entry_uuid = ?",
@@ -1530,28 +1683,31 @@ def delete_entry_by_hash(
     edited_by: str,
     api_key_id: str | None = None,
 ):
-    if "archive_mode" not in quasilattice.config or quasilattice.config["archive_mode"]:
-        entry_row = read_entry_row_by_hash(cursor, entry_hash)
-        if entry_row is not None:
-            write_edit_log(
-                cursor,
-                {
-                    "entry_hash": entry_hash,
-                    "entry_uuid": entry_row["uuid"],
-                    "is_deletion": True,
-                    "timestamp": time.time(),
-                    "edited_by": edited_by,
-                    "api_key_id": api_key_id,
-                },
-            )
-    else:
+    current_time = time.time()
+    entry_row = read_entry_row_by_hash(cursor, entry_hash)
+    if entry_row is not None:
+        write_edit_log(
+            cursor,
+            {
+                "entry_hash": entry_hash,
+                "entry_uuid": entry_row["uuid"],
+                "is_deletion": True,
+                "timestamp": time.time(),
+                "edited_by": edited_by,
+                "api_key_id": api_key_id,
+            },
+        )
+    if (
+        "archive_mode" in quasilattice.config
+        and not quasilattice.config["archive_mode"]
+    ):
         cursor.execute(
             "DELETE FROM entries WHERE hash = ?",
             (entry_hash,),
         )
         cursor.execute(
-            "DELETE FROM edit_log WHERE entry_hash = ?",
-            (entry_hash,),
+            "DELETE FROM edit_log WHERE entry_hash = ? AND timestamp < ?",
+            (entry_hash, current_time),
         )
         cursor.execute(
             "DELETE FROM aliases WHERE entry_hash = ?",
@@ -1918,8 +2074,8 @@ def read_alias_rows_by_uuid(
         """
         SELECT * FROM aliases AS aliases1
         WHERE aliases1.entry_uuid = ?
-        AND aliases1.time_edited = (
-            SELECT MAX(time_edited) FROM aliases WHERE alias = aliases1.alias
+        AND aliases1.timestamp = (
+            SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
         )
         """,
         (entry_uuid,),
@@ -1939,8 +2095,8 @@ def read_alias_rows_by_hash(
         """
         SELECT * FROM aliases AS aliases1
         WHERE aliases1.entry_hash = ?
-        AND aliases1.time_edited = (
-            SELECT MAX(time_edited) FROM aliases WHERE alias = aliases1.alias
+        AND aliases1.timestamp = (
+            SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
         )
         """,
         (entry_hash,),
@@ -1956,7 +2112,7 @@ def read_alias_row(cursor: sqlite3.Cursor, alias: str) -> sqlite3.Row | None:
             """
             SELECT * FROM aliases
             WHERE alias = ?
-            ORDER BY time_edited DESC LIMIT 1
+            ORDER BY timestamp DESC LIMIT 1
             """,
             (alias,),
         )
@@ -1965,7 +2121,7 @@ def read_alias_row(cursor: sqlite3.Cursor, alias: str) -> sqlite3.Row | None:
             """
             SELECT * FROM aliases
             WHERE LOWER(alias) = ?
-            ORDER BY time_edited DESC LIMIT 1
+            ORDER BY timestamp DESC LIMIT 1
             """,
             (alias.lower(),),
         )
@@ -1985,10 +2141,10 @@ def read_alias_rows_by_alias(
             f"""
             SELECT * FROM aliases AS aliases1
             WHERE aliases1.alias IN ({",".join("?" for alias in aliases)})
-                AND aliases1.time_edited = (
-                    SELECT MAX(time_edited) FROM aliases WHERE alias = aliases1.alias
+                AND aliases1.timestamp = (
+                    SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
                 )
-            ORDER BY {"hash DESC" if order_by_hash else "time_edited DESC"}
+            ORDER BY {"hash DESC" if order_by_hash else "timestamp DESC"}
             LIMIT ?
             """,
             (*aliases, limit),
@@ -1998,10 +2154,10 @@ def read_alias_rows_by_alias(
             f"""
             SELECT * FROM aliases AS aliases1
             WHERE LOWER(aliases1.alias) IN ({",".join("?" for alias in aliases)})
-                AND aliases1.time_edited = (
-                    SELECT MAX(time_edited) FROM aliases WHERE alias = aliases1.alias
+                AND aliases1.timestamp = (
+                    SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
                 )
-            ORDER BY {"hash DESC" if order_by_hash else "time_edited DESC"}
+            ORDER BY {"hash DESC" if order_by_hash else "timestamp DESC"}
             LIMIT ?
             """,
             (*[alias.lower() for alias in aliases], limit),
@@ -2016,8 +2172,8 @@ def read_alias_rows_after_time(
     cursor.execute(
         """
             SELECT * FROM aliases
-            WHERE time_edited > ?
-            ORDER BY time_edited ASC LIMIT ?
+            WHERE timestamp > ?
+            ORDER BY timestamp ASC LIMIT ?
             """,
         (after_time, limit),
     )
@@ -2031,8 +2187,8 @@ def read_alias_rows_before_time(
     cursor.execute(
         """
             SELECT * FROM aliases
-            WHERE time_edited < ?
-            ORDER BY time_edited DESC LIMIT ?
+            WHERE timestamp < ?
+            ORDER BY timestamp DESC LIMIT ?
             """,
         (before_time, limit),
     )
@@ -2095,19 +2251,18 @@ def set_aliases_by_uuid(
                 cursor.execute(
                     "DELETE FROM aliases WHERE alias = ? ", (existing_alias,)
                 )
-            else:
-                # mark alias deleted
-                write_alias_row(
-                    cursor,
-                    {
-                        "entry_hash": None,
-                        "entry_uuid": None,
-                        "alias": existing_alias,
-                        "time_edited": int(time.time()),
-                        "edited_by": edited_by,
-                        "api_key_id": api_key_id,
-                    },
-                )
+            # mark alias deleted
+            write_alias_row(
+                cursor,
+                {
+                    "entry_hash": None,
+                    "entry_uuid": None,
+                    "alias": existing_alias,
+                    "timestamp": time.time(),
+                    "edited_by": edited_by,
+                    "api_key_id": api_key_id,
+                },
+            )
     for alias in aliases:
         if alias not in existing_aliases:
             write_alias_row(
@@ -2116,7 +2271,7 @@ def set_aliases_by_uuid(
                     "entry_hash": None,
                     "entry_uuid": entry_uuid,
                     "alias": alias,
-                    "time_edited": int(time.time()),
+                    "timestamp": time.time(),
                     "edited_by": edited_by,
                     "api_key_id": api_key_id,
                 },
@@ -2139,7 +2294,7 @@ def add_alias_by_uuid(
                 "entry_hash": None,
                 "entry_uuid": entry_uuid,
                 "alias": alias,
-                "time_edited": int(time.time()),
+                "timestamp": time.time(),
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -2162,19 +2317,18 @@ def remove_alias_by_uuid(
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
-        else:
-            # mark alias deleted
-            write_alias_row(
-                cursor,
-                {
-                    "entry_hash": None,
-                    "entry_uuid": None,
-                    "alias": alias,
-                    "time_edited": int(time.time()),
-                    "edited_by": edited_by,
-                    "api_key_id": api_key_id,
-                },
-            )
+        # mark alias deleted
+        write_alias_row(
+            cursor,
+            {
+                "entry_hash": None,
+                "entry_uuid": None,
+                "alias": alias,
+                "timestamp": time.time(),
+                "edited_by": edited_by,
+                "api_key_id": api_key_id,
+            },
+        )
 
 
 def set_aliases_by_hash(
@@ -2195,19 +2349,18 @@ def set_aliases_by_hash(
                 cursor.execute(
                     "DELETE FROM aliases WHERE alias = ? ", (existing_alias,)
                 )
-            else:
-                # mark alias deleted
-                write_alias_row(
-                    cursor,
-                    {
-                        "entry_hash": None,
-                        "entry_uuid": None,
-                        "alias": existing_alias,
-                        "time_edited": int(time.time()),
-                        "edited_by": edited_by,
-                        "api_key_id": api_key_id,
-                    },
-                )
+            # mark alias deleted
+            write_alias_row(
+                cursor,
+                {
+                    "entry_hash": None,
+                    "entry_uuid": None,
+                    "alias": existing_alias,
+                    "timestamp": time.time(),
+                    "edited_by": edited_by,
+                    "api_key_id": api_key_id,
+                },
+            )
     for alias in aliases:
         if alias not in existing_aliases:
             # add alias
@@ -2217,7 +2370,7 @@ def set_aliases_by_hash(
                     "entry_hash": entry_hash,
                     "entry_uuid": None,
                     "alias": alias,
-                    "time_edited": int(time.time()),
+                    "timestamp": time.time(),
                     "edited_by": edited_by,
                     "api_key_id": api_key_id,
                 },
@@ -2241,7 +2394,7 @@ def add_alias_by_hash(
                 "entry_hash": entry_hash,
                 "entry_uuid": None,
                 "alias": alias,
-                "time_edited": int(time.time()),
+                "timestamp": time.time(),
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -2264,19 +2417,18 @@ def remove_alias_by_hash(
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
-        else:
-            # mark alias deleted
-            write_alias_row(
-                cursor,
-                {
-                    "entry_hash": None,
-                    "entry_uuid": None,
-                    "alias": alias,
-                    "time_edited": int(time.time()),
-                    "edited_by": edited_by,
-                    "api_key_id": api_key_id,
-                },
-            )
+        # mark alias deleted
+        write_alias_row(
+            cursor,
+            {
+                "entry_hash": None,
+                "entry_uuid": None,
+                "alias": alias,
+                "timestamp": time.time(),
+                "edited_by": edited_by,
+                "api_key_id": api_key_id,
+            },
+        )
 
 
 def remove_alias(
@@ -2293,19 +2445,18 @@ def remove_alias(
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
-        else:
-            # mark alias deleted
-            write_alias_row(
-                cursor,
-                {
-                    "entry_hash": None,
-                    "entry_uuid": None,
-                    "alias": alias,
-                    "time_edited": int(time.time()),
-                    "edited_by": edited_by,
-                    "api_key_id": api_key_id,
-                },
-            )
+        # mark alias deleted
+        write_alias_row(
+            cursor,
+            {
+                "entry_hash": None,
+                "entry_uuid": None,
+                "alias": alias,
+                "timestamp": time.time(),
+                "edited_by": edited_by,
+                "api_key_id": api_key_id,
+            },
+        )
 
 
 def write_default_alias_by_uuid(
@@ -2412,7 +2563,7 @@ def normalize_alias(alias_data: dict | sqlite3.Row | tuple) -> dict:
         "entry_hash": entry_hash_str,
         "entry_uuid": entry_uuid_str,
         "alias": str(alias_data["alias"]),
-        "time_edited": int(alias_data["time_edited"]),
+        "timestamp": float(alias_data["timestamp"]),
         "edited_by": str(alias_data["edited_by"]),
         "api_key_id": str(alias_data["api_key_id"])
         if alias_data["api_key_id"] is not None
@@ -2436,7 +2587,7 @@ def convert_alias_to_tuple(alias_data: dict | sqlite3.Row):
         if alias_dict["entry_uuid"] is not None
         else None,
         alias_dict["alias"],
-        alias_dict["time_edited"],
+        alias_dict["timestamp"],
         alias_dict["edited_by"],
         alias_dict["api_key_id"],
         calculate_alias_hash(alias_dict),
@@ -2448,7 +2599,7 @@ def convert_alias_to_dict(alias_tuple: sqlite3.Row | tuple) -> dict:
         "entry_hash": alias_tuple[0],
         "entry_uuid": alias_tuple[1],
         "alias": alias_tuple[2],
-        "time_edited": alias_tuple[3],
+        "timestamp": alias_tuple[3],
         "edited_by": alias_tuple[4],
         "api_key_id": alias_tuple[5],
     }
@@ -2464,8 +2615,8 @@ def _delete_outdated_aliases_if_not_in_archive_mode(cursor: sqlite3.Cursor):
         cursor.execute(
             """
             DELETE FROM aliases AS aliases1
-            WHERE aliases1.time_edited < (
-                SELECT MAX(time_edited) FROM aliases WHERE alias = aliases1.alias
+            WHERE aliases1.timestamp < (
+                SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
             )
             """
         )
@@ -2508,8 +2659,8 @@ def read_read_access_rows_by_uuid(
         """
         SELECT * FROM read_access
         WHERE entry_uuid = ?
-          AND time_edited = (
-              SELECT MAX(time_edited) FROM read_access WHERE entry_uuid = ?
+          AND timestamp = (
+              SELECT MAX(timestamp) FROM read_access WHERE entry_uuid = ?
           )
         """,
         (entry_uuid, entry_uuid),
@@ -2554,8 +2705,8 @@ def read_read_access_rows_by_hash(
         """
         SELECT * FROM read_access
         WHERE entry_hash = ?
-          AND time_edited = (
-              SELECT MAX(time_edited) FROM read_access WHERE entry_hash = ?
+          AND timestamp = (
+              SELECT MAX(timestamp) FROM read_access WHERE entry_hash = ?
           )
         """,
         (entry_hash, entry_hash),
@@ -2570,8 +2721,8 @@ def read_read_access_rows_after_time(
     cursor.execute(
         """
             SELECT * FROM read_access
-            WHERE time_edited > ?
-            ORDER BY time_edited ASC LIMIT ?
+            WHERE timestamp > ?
+            ORDER BY timestamp ASC LIMIT ?
             """,
         (after_time, limit),
     )
@@ -2585,8 +2736,8 @@ def read_read_access_rows_before_time(
     cursor.execute(
         """
             SELECT * FROM read_access
-            WHERE time_edited < ?
-            ORDER BY time_edited DESC LIMIT ?
+            WHERE timestamp < ?
+            ORDER BY timestamp DESC LIMIT ?
             """,
         (before_time, limit),
     )
@@ -2643,7 +2794,7 @@ def set_read_accesses_by_uuid(
 ):
     existing_read_access_rows = read_read_access_rows_by_uuid(cursor, entry_uuid)
     existing_read_accesses = [row["read_access"] for row in existing_read_access_rows]
-    current_time = int(time.time())
+    current_time = time.time()
     if len(read_accesses) == 0:
         write_read_access_row(
             cursor,
@@ -2651,7 +2802,7 @@ def set_read_accesses_by_uuid(
                 "entry_hash": None,
                 "entry_uuid": entry_uuid,
                 "read_access": None,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -2663,7 +2814,7 @@ def set_read_accesses_by_uuid(
                 "entry_hash": None,
                 "entry_uuid": entry_uuid,
                 "read_access": read_access,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by
                 if read_access not in existing_read_accesses
                 else existing_read_access_rows[
@@ -2743,7 +2894,7 @@ def set_read_accesses_by_hash(
                 edited_by,
                 api_key_id,
             )
-    current_time = int(time.time())
+    current_time = time.time()
     if len(read_accesses) == 0:
         write_read_access_row(
             cursor,
@@ -2751,7 +2902,7 @@ def set_read_accesses_by_hash(
                 "entry_hash": entry_hash,
                 "entry_uuid": None,
                 "read_access": None,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -2763,7 +2914,7 @@ def set_read_accesses_by_hash(
                 "entry_hash": entry_hash,
                 "entry_uuid": None,
                 "read_access": read_access,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by
                 if read_access not in existing_read_accesses
                 else existing_read_access_rows[
@@ -2885,7 +3036,7 @@ def normalize_read_access(read_access_data: dict | sqlite3.Row | tuple) -> dict:
         "read_access": str(read_access_data["read_access"])
         if read_access_data["read_access"] is not None
         else None,
-        "time_edited": int(read_access_data["time_edited"]),
+        "timestamp": float(read_access_data["timestamp"]),
         "edited_by": str(read_access_data["edited_by"]),
         "api_key_id": str(read_access_data["api_key_id"])
         if read_access_data["api_key_id"] is not None
@@ -2909,7 +3060,7 @@ def convert_read_access_to_tuple(read_access_data: dict | sqlite3.Row):
         if read_access_dict["entry_uuid"] is not None
         else None,
         read_access_dict["read_access"],
-        read_access_dict["time_edited"],
+        read_access_dict["timestamp"],
         read_access_dict["edited_by"],
         read_access_dict["api_key_id"],
         calculate_read_access_hash(read_access_dict),
@@ -2921,7 +3072,7 @@ def convert_read_access_to_dict(read_access_tuple: sqlite3.Row | tuple) -> dict:
         "entry_hash": read_access_tuple[0],
         "entry_uuid": read_access_tuple[1],
         "read_access": read_access_tuple[2],
-        "time_edited": read_access_tuple[3],
+        "timestamp": read_access_tuple[3],
         "edited_by": read_access_tuple[4],
         "api_key_id": read_access_tuple[5],
     }
@@ -2937,14 +3088,17 @@ def _delete_outdated_read_access_if_not_in_archive_mode(cursor: sqlite3.Cursor):
         cursor.execute(
             """
             DELETE FROM read_access AS read_access1
-            WHERE
-            (read_access1.entry_uuid IS NOT NULL
-                AND entry_hash IS NULL
-                AND entry_uuid = read_access1.entry_uuid)
-            OR
-            (read_access1.entry_hash IS NOT NULL
-                AND entry_uuid IS NULL
-                AND entry_hash = read_access1.entry_hash)
+            WHERE read_access1.timestamp < (
+                SELECT MAX(timestamp) FROM read_access
+                WHERE 
+                (read_access1.entry_uuid IS NOT NULL
+                    AND entry_hash IS NULL
+                    AND entry_uuid = read_access1.entry_uuid)
+                OR
+                (read_access1.entry_hash IS NOT NULL
+                    AND entry_uuid IS NULL
+                    AND entry_hash = read_access1.entry_hash)
+                )
             )
             """
         )
@@ -2987,8 +3141,8 @@ def read_write_access_rows_by_uuid(
         """
         SELECT * FROM write_access
         WHERE entry_uuid = ?
-          AND time_edited = (
-              SELECT MAX(time_edited) FROM write_access WHERE entry_uuid = ?
+          AND timestamp = (
+              SELECT MAX(timestamp) FROM write_access WHERE entry_uuid = ?
           )
         """,
         (entry_uuid, entry_uuid),
@@ -3033,8 +3187,8 @@ def read_write_access_rows_by_hash(
         """
         SELECT * FROM write_access
         WHERE entry_hash = ?
-          AND time_edited = (
-              SELECT MAX(time_edited) FROM write_access WHERE entry_hash = ?
+          AND timestamp = (
+              SELECT MAX(timestamp) FROM write_access WHERE entry_hash = ?
           )
         """,
         (entry_hash, entry_hash),
@@ -3049,8 +3203,8 @@ def read_write_access_rows_after_time(
     cursor.execute(
         """
             SELECT * FROM write_access
-            WHERE time_edited > ?
-            ORDER BY time_edited ASC LIMIT ?
+            WHERE timestamp > ?
+            ORDER BY timestamp ASC LIMIT ?
             """,
         (after_time, limit),
     )
@@ -3064,8 +3218,8 @@ def read_write_access_rows_before_time(
     cursor.execute(
         """
             SELECT * FROM write_access
-            WHERE time_edited < ?
-            ORDER BY time_edited DESC LIMIT ?
+            WHERE timestamp < ?
+            ORDER BY timestamp DESC LIMIT ?
             """,
         (before_time, limit),
     )
@@ -3124,7 +3278,7 @@ def set_write_accesses_by_uuid(
     existing_write_accesses = [
         row["write_access"] for row in existing_write_access_rows
     ]
-    current_time = int(time.time())
+    current_time = time.time()
     if len(write_accesses) == 0:
         write_write_access_row(
             cursor,
@@ -3132,7 +3286,7 @@ def set_write_accesses_by_uuid(
                 "entry_hash": None,
                 "entry_uuid": entry_uuid,
                 "write_access": None,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -3144,7 +3298,7 @@ def set_write_accesses_by_uuid(
                 "entry_hash": None,
                 "entry_uuid": entry_uuid,
                 "write_access": write_access,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by
                 if write_access not in existing_write_accesses
                 else existing_write_access_rows[
@@ -3226,7 +3380,7 @@ def set_write_accesses_by_hash(
                 edited_by,
                 api_key_id,
             )
-    current_time = int(time.time())
+    current_time = time.time()
     if len(write_accesses) == 0:
         write_write_access_row(
             cursor,
@@ -3234,7 +3388,7 @@ def set_write_accesses_by_hash(
                 "entry_hash": entry_hash,
                 "entry_uuid": None,
                 "write_access": None,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by,
                 "api_key_id": api_key_id,
             },
@@ -3246,7 +3400,7 @@ def set_write_accesses_by_hash(
                 "entry_hash": entry_hash,
                 "entry_uuid": None,
                 "write_access": write_access,
-                "time_edited": current_time,
+                "timestamp": current_time,
                 "edited_by": edited_by
                 if write_access not in existing_write_accesses
                 else existing_write_access_rows[
@@ -3368,7 +3522,7 @@ def normalize_write_access(write_access_data: dict | sqlite3.Row | tuple) -> dic
         "write_access": str(write_access_data["write_access"])
         if write_access_data["write_access"] is not None
         else None,
-        "time_edited": int(write_access_data["time_edited"]),
+        "timestamp": float(write_access_data["timestamp"]),
         "edited_by": str(write_access_data["edited_by"]),
         "api_key_id": str(write_access_data["api_key_id"])
         if write_access_data["api_key_id"] is not None
@@ -3392,7 +3546,7 @@ def convert_write_access_to_tuple(write_access_data: dict | sqlite3.Row):
         if write_access_dict["entry_uuid"] is not None
         else None,
         write_access_dict["write_access"],
-        write_access_dict["time_edited"],
+        write_access_dict["timestamp"],
         write_access_dict["edited_by"],
         write_access_dict["api_key_id"],
         calculate_write_access_hash(write_access_dict),
@@ -3404,7 +3558,7 @@ def convert_write_access_to_dict(write_access_tuple: sqlite3.Row | tuple) -> dic
         "entry_hash": write_access_tuple[0],
         "entry_uuid": write_access_tuple[1],
         "write_access": write_access_tuple[2],
-        "time_edited": write_access_tuple[3],
+        "timestamp": write_access_tuple[3],
         "edited_by": write_access_tuple[4],
         "api_key_id": write_access_tuple[5],
     }
@@ -3420,14 +3574,17 @@ def _delete_outdated_write_access_if_not_in_archive_mode(cursor: sqlite3.Cursor)
         cursor.execute(
             """
             DELETE FROM write_access AS write_access1
-            WHERE
-            (write_access1.entry_uuid IS NOT NULL
-                AND entry_hash IS NULL
-                AND entry_uuid = write_access1.entry_uuid)
-            OR
-            (write_access1.entry_hash IS NOT NULL
-                AND entry_uuid IS NULL
-                AND entry_hash = write_access1.entry_hash)
+            WHERE write_access1.timestamp < (
+                SELECT MAX(timestamp) FROM write_access
+                WHERE 
+                (write_access1.entry_uuid IS NOT NULL
+                    AND entry_hash IS NULL
+                    AND entry_uuid = write_access1.entry_uuid)
+                OR
+                (write_access1.entry_hash IS NOT NULL
+                    AND entry_uuid IS NULL
+                    AND entry_hash = write_access1.entry_hash)
+                )
             )
             """
         )

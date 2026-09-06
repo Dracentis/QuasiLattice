@@ -8,7 +8,7 @@ version = "0.4.0"
 authors = [
   { name="Kaedon Cleland-Host", email="kaedon@kaedon.net" },
 ]
-description = "A data analysis, knowledge base, journaling and note taking system built with FastAPI."
+description = "A data analysis, knowledge base, journaling and note taking system."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
