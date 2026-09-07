@@ -53,8 +53,7 @@ def validate_database(db_path=None):
             raise
         return
     try:
-        with sqlite3.connect(db_path) as sql_connection:
-            sql_connection.row_factory = sqlite3.Row
+        with connection(db_path) as sql_connection:
             sql_cursor = sql_connection.cursor()
 
             # enforce foreign key constraints (off by default in sqlite)
@@ -288,7 +287,6 @@ def validate_database(db_path=None):
             update_info(sql_cursor)
 
             sql_connection.commit()
-            sql_cursor.close()
     except PermissionError:
         logger.critical("Permission denied while validating database")
         if logger.getEffectiveLevel() <= 10:
@@ -387,8 +385,9 @@ def write_user(cursor: sqlite3.Cursor, user_data: dict | sqlite3.Row | tuple):
         user_data,
     )
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         # delete outdated rows
         cursor.execute(
@@ -565,8 +564,9 @@ def write_api_key(cursor: sqlite3.Cursor, api_key_data: dict | sqlite3.Row | tup
         api_key_data,
     )
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         # delete outdated rows
         cursor.execute(
@@ -692,8 +692,9 @@ def read_entry_row_by_uuid(
 ) -> sqlite3.Row | None:
     """Returns the most recent (not deleted) version of an entry row or None."""
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             """
@@ -743,8 +744,9 @@ def read_entry_row_by_hash(
 ) -> sqlite3.Row | None:
     """Returns a (not deleted) entry row by hash or None."""
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             "SELECT * FROM entries WHERE hash = ?",
@@ -769,29 +771,26 @@ def read_entry_row_by_hash(
     return cursor.fetchone()
 
 
-def read_entry_by_alias(
-    cursor: sqlite3.Cursor, alias: str, include_deleted: bool = False
+def read_entry_by_id(
+    cursor: sqlite3.Cursor, entry_id: str | bytes, include_deleted: bool = False
 ) -> dict | None:
     """Returns a (not deleted) entry by alias or None."""
-    entry_row = read_entry_row_by_alias(cursor, alias, include_deleted)
+    entry_row = read_entry_row_by_id(cursor, entry_id, include_deleted)
     if entry_row is None:
         return None
     return convert_entry_row_to_dict(entry_row)
 
 
-def read_entry_row_by_alias(
-    cursor: sqlite3.Cursor, alias: str, include_deleted: bool = False
+def read_entry_row_by_id(
+    cursor: sqlite3.Cursor, entry_id: str | bytes, include_deleted: bool = False
 ) -> sqlite3.Row | None:
     """Returns a (not deleted) entry row by alias or None."""
-    alias_row = read_alias_row(cursor, alias)
-    if alias_row is None:
-        return None
-    entry_hash = alias_row[0]
-    entry_uuid = alias_row[1]
-    if entry_uuid is not None:
-        return read_entry_row_by_uuid(cursor, entry_uuid, include_deleted)
-    elif entry_hash is not None:
-        return read_entry_row_by_hash(cursor, entry_hash, include_deleted)
+    if isinstance(entry_id, str):
+        entry_id = resolve_entry_alias(cursor, entry_id)
+    if len(entry_id) == 16:
+        return read_entry_row_by_uuid(cursor, entry_id, include_deleted)
+    elif len(entry_id) == 32:
+        return read_entry_row_by_hash(cursor, entry_id, include_deleted)
     return None
 
 
@@ -800,15 +799,17 @@ def read_entries_by_uuid(
     entry_uuids: list[bytes],
     limit: int = 500,
     include_deleted: bool = False,
-    order_by_hash: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     """Returns a list of the most recent (not deleted) versions of multiple entries."""
-    return [
-        convert_entry_row_to_dict(row)
+    return {
+        str(uuid.UUID(bytes=row["uuid"])): convert_entry_row_to_dict(row)
         for row in read_entry_rows_by_uuid(
-            cursor, entry_uuids, limit, include_deleted, order_by_hash
+            cursor,
+            entry_uuids,
+            limit,
+            include_deleted,
         )
-    ]
+    }
 
 
 def read_entry_rows_by_uuid(
@@ -823,8 +824,9 @@ def read_entry_rows_by_uuid(
         return []
 
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             f"""
@@ -884,15 +886,17 @@ def read_entries_by_hash(
     entry_hashes: list[bytes],
     limit: int = 500,
     include_deleted: bool = False,
-    order_by_hash: bool = False,
-) -> list[dict]:
-    """Returns a list of multiple (not deleted) entries by hashes."""
-    return [
-        convert_entry_row_to_dict(row)
+) -> dict[str, dict]:
+    """Returns a dictionary of multiple (not deleted) entries by hashes."""
+    return {
+        bytes(row["hash"]).hex(): convert_entry_row_to_dict(row)
         for row in read_entry_rows_by_hash(
-            cursor, entry_hashes, limit, include_deleted, order_by_hash
+            cursor,
+            entry_hashes,
+            limit,
+            include_deleted,
         )
-    ]
+    }
 
 
 def read_entry_rows_by_hash(
@@ -907,8 +911,9 @@ def read_entry_rows_by_hash(
         return []
 
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             f"""
@@ -947,15 +952,12 @@ def read_all_entries(
     cursor: sqlite3.Cursor,
     limit: int = 500,
     include_deleted: bool = False,
-    order_by_hash: bool = False,
-) -> list[dict]:
-    """Returns a list of multiple (not deleted) entries by hashes."""
-    return [
-        convert_entry_row_to_dict(row)
-        for row in read_all_entry_rows(
-            cursor, limit, include_deleted, order_by_hash
-        )
-    ]
+) -> dict[str, dict]:
+    """Returns a dict of multiple (not deleted) entries by hashes."""
+    return {
+        bytes(row["hash"]).hex(): convert_entry_row_to_dict(row)
+        for row in read_all_entry_rows(cursor, limit, include_deleted)
+    }
 
 
 def read_all_entry_rows(
@@ -966,8 +968,9 @@ def read_all_entry_rows(
 ) -> list[sqlite3.Row]:
     """Returns a list of multiple (not deleted) entry rows by hash."""
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             f"""
@@ -1005,15 +1008,12 @@ def read_entry_versions(
     entry_uuid: bytes,
     limit: int = 500,
     include_deleted: bool = False,
-    order_by_hash: bool = False,
-) -> list[dict]:
-    """Returns a list of all (not deleted) entry versions."""
-    return [
-        convert_entry_row_to_dict(row)
-        for row in read_entry_version_rows(
-            cursor, entry_uuid, limit, include_deleted, order_by_hash
-        )
-    ]
+) -> dict[str, dict]:
+    """Returns a dict of all (not deleted) entry versions for a given uuid."""
+    return {
+        bytes(row["hash"]).hex(): convert_entry_row_to_dict(row)
+        for row in read_entry_version_rows(cursor, entry_uuid, limit, include_deleted)
+    }
 
 
 def read_entry_version_rows(
@@ -1025,8 +1025,9 @@ def read_entry_version_rows(
 ) -> list[sqlite3.Row]:
     """Returns a list of all (not deleted) entry version rows."""
     if include_deleted or (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             f"""
@@ -1039,7 +1040,7 @@ def read_entry_version_rows(
         )
     else:
         cursor.execute(
-            """
+            f"""
             SELECT entries.*
             FROM edit_log
             JOIN entries ON entries.hash = edit_log.entry_hash
@@ -1063,28 +1064,29 @@ def read_entry_version_rows(
 
 def read_entry_uuids(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
     cursor.execute(
-            """
+        """
             SELECT DISTINCT uuid FROM entries
             ORDER BY uuid ASC
             LIMIT ?
             """,
-            (limit,),
-        )
+        (limit,),
+    )
     rows = cursor.fetchall()
     return [row["uuid"] for row in rows]
 
 
 def read_entry_hashes(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
     cursor.execute(
-            """
+        """
             SELECT DISTINCT hash FROM entries
             ORDER BY hash ASC
             LIMIT ?
             """,
-            (limit,),
-        )
+        (limit,),
+    )
     rows = cursor.fetchall()
     return [row["hash"] for row in rows]
+
 
 def read_entry_hash(cursor: sqlite3.Cursor, entry_uuid: bytes) -> bytes | None:
     """Returns the hash of the most recent (not deleted) version of an entry or None."""
@@ -1182,7 +1184,7 @@ def read_entries_after_time(
     after_timestamp: float,
     limit: int = 500,
     include_deleted: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     entry_hashes = read_entry_hashes_after_time(
         cursor, after_timestamp, limit, include_deleted
     )
@@ -1263,7 +1265,7 @@ def read_entries_before_time(
     before_timestamp: float,
     limit: int = 500,
     include_deleted: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     entry_hashes = read_entry_hashes_before_time(
         cursor, before_timestamp, limit, include_deleted
     )
@@ -1344,7 +1346,7 @@ def read_entries_after_hash(
     after_hash: bytes,
     limit: int = 500,
     include_deleted: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     entry_hashes = read_entry_hashes_after_hash(
         cursor, after_hash, limit, include_deleted
     )
@@ -1425,11 +1427,37 @@ def read_entries_before_hash(
     before_hash: bytes,
     limit: int = 500,
     include_deleted: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     entry_hashes = read_entry_hashes_before_hash(
         cursor, before_hash, limit, include_deleted
     )
     return read_entries_by_hash(cursor, entry_hashes, limit, include_deleted)
+
+
+def entry_exists(
+    cursor: sqlite3.Cursor, entry_id: str | bytes, include_deleted: bool = False
+) -> bool:
+    if isinstance(entry_id, str):
+        entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
+    cursor.execute(
+        f"""
+        SELECT 1
+        FROM edit_log
+        JOIN entries ON entries.hash = edit_log.entry_hash
+        WHERE edit_log.entry_{"uuid" if len(entry_id) == 16 else "hash"} = ?
+            AND edit_log.is_deletion = 0
+      {
+            '''AND edit_log.timestamp = (
+            SELECT MAX(timestamp) FROM edit_log AS latest 
+            WHERE latest.entry_hash = edit_log.entry_hash
+            )'''
+            if not include_deleted
+            else ""
+        }
+        """,
+        (entry_id,),
+    )
+    return cursor.fetchone() is not None
 
 
 def read_entries_by_filter(
@@ -1438,15 +1466,22 @@ def read_entries_by_filter(
     limit: int = 500,
     include_outdated: bool = False,
     include_deleted: bool = False,
-    order_by_hash: bool = False,
-) -> list[dict]:
+) -> dict[str, dict]:
     """Returns a list of all (not deleted and not outdated) entries that match the filter."""
-    return [
-        convert_entry_row_to_dict(row)
+    return {
+        (
+            bytes(row["hash"]).hex()
+            if row["uuid"] is None or include_outdated
+            else str(uuid.UUID(bytes=row["uuid"]))
+        ): convert_entry_row_to_dict(row)
         for row in read_entry_rows_by_filter(
-            cursor, filter, limit, include_outdated, include_deleted, order_by_hash
+            cursor,
+            filter,
+            limit,
+            include_outdated,
+            include_deleted,
         )
-    ]
+    }
 
 
 def read_entry_rows_by_filter(
@@ -1488,7 +1523,7 @@ def read_entry_rows_by_filter(
         sql_command += "AND EXISTS ( SELECT 1 FROM metadata_tree WHERE entry_hash = tree.entry_hash AND key = ? "
         parameters.append(path[-1])
         if op != "exists":
-            sql_command += "AND value"
+            sql_command += "AND json_extract(value, '$')"
             if op == "lt":
                 sql_command += " < "
             elif op == "lte":
@@ -1521,6 +1556,7 @@ def read_entry_rows_by_filter(
     sql_command += "LIMIT ?"
     parameters.append(limit)
     logger.debug("Constructed filter SQL statement: " + sql_command)
+    logger.debug("with parameters: " + str(parameters))
 
     cursor.execute(sql_command, parameters)
     entry_hashes = [row["entry_hash"] for row in cursor.fetchall()]
@@ -1563,6 +1599,7 @@ def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
             except (ValueError, SyntaxError):
                 value = value_part  # fall back to raw string
         conditions.append((path, op, value))
+    logger.debug("Filter conditions: " + str(conditions))
     return conditions
 
 
@@ -1571,7 +1608,7 @@ def write_entry_dict(
     entry_dict: dict,
     edited_by: str,
     api_key_id: str | None = None,
-):
+) -> bytes:
     entry_uuid = _get_column_property(entry_dict, "uuid")
     new_timestamp = _get_column_property(entry_dict, "timestamp")
     entry_tuple = convert_entry_dict_to_tuple(entry_dict)
@@ -1579,9 +1616,11 @@ def write_entry_dict(
 
     if (
         entry_uuid is not None
-        and "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        and "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
+        print("PASSED!")
         # delete old versions of entry
         entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
         if len(entry_version_hashes) > 0:
@@ -1627,8 +1666,9 @@ def write_entry_dict(
         ):
             validated_timestamp = time.time()
         if (
-            "archive_mode" in quasilattice.config
-            and not quasilattice.config["archive_mode"]
+            "quasilattice" in quasilattice.config
+            and "archive_mode" in quasilattice.config["quasilattice"]
+            and not quasilattice.config["quasilattice"]["archive_mode"]
         ):
             # delete outdated entries from edit_log
             if entry_uuid is not None:
@@ -1659,6 +1699,10 @@ def write_entry_dict(
             cursor, entry_hash, new_timestamp, key, value
         )
 
+    if entry_uuid is not None:
+        return entry_uuid
+    return entry_hash
+
 
 def delete_entry_by_uuid(
     cursor: sqlite3.Cursor,
@@ -1681,8 +1725,9 @@ def delete_entry_by_uuid(
             },
         )
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
         if len(entry_version_hashes) > 0:
@@ -1779,8 +1824,9 @@ def delete_entry_by_hash(
             },
         )
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         cursor.execute(
             "DELETE FROM entries WHERE hash = ?",
@@ -2208,18 +2254,18 @@ def read_alias_row(cursor: sqlite3.Cursor, alias: str) -> sqlite3.Row | None:
         )
     return cursor.fetchone()
 
+
 def resolve_entry_alias(cursor: sqlite3.Cursor, entry_alias: str) -> bytes:
     alias_row = read_alias_row(cursor, entry_alias)
-    if alias_row["entry_uuid"] is not None:
+    if alias_row is not None and alias_row["entry_uuid"] is not None:
         entry_alias = bytes(alias_row["entry_uuid"])
-    elif alias_row["entry_hash"] is not None:
+    elif alias_row is not None and alias_row["entry_hash"] is not None:
         entry_alias = bytes(alias_row["entry_hash"])
     else:
         try:
-            entry_alias = "".join(
-                c for c in entry_alias if c in "0123456789abcdefABCDEF"
+            return bytes.fromhex(
+                "".join(c for c in entry_alias if c in "0123456789abcdefABCDEF")
             )
-            entry_alias = bytes.fromhex(entry_alias)
         except (TypeError, ValueError):
             return b""
     return b""
@@ -2277,7 +2323,9 @@ def read_alias_rows_after_time(
     return cursor.fetchall()
 
 
-def read_aliases_before_time(cursor: sqlite3.Cursor, before_time: float, limit: int = 500) -> list[str]:
+def read_aliases_before_time(
+    cursor: sqlite3.Cursor, before_time: float, limit: int = 500
+) -> list[str]:
     """Returns a list of current alises that were most recently edited before before_time"""
     case_sensitive = quasilattice.config["quasilattice"]["case_sensitive_aliases"]
     if case_sensitive:
@@ -2285,9 +2333,10 @@ def read_aliases_before_time(cursor: sqlite3.Cursor, before_time: float, limit: 
             """
             SELECT * FROM aliases AS aliases1
             WHERE aliases1.timestamp < ?
-                AND aliases1.timestamp = (
-                    SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
-                )
+              AND (aliases1.entry_hash IS NOT NULL OR aliases1.entry_uuid IS NOT NULL)
+              AND aliases1.timestamp = (
+                SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
+              )
             ORDER BY timestamp DESC
             LIMIT ?
             """,
@@ -2298,9 +2347,10 @@ def read_aliases_before_time(cursor: sqlite3.Cursor, before_time: float, limit: 
             """
             SELECT * FROM aliases AS aliases1
             WHERE aliases1.timestamp < ?
-                AND aliases1.timestamp = (
-                    SELECT MAX(timestamp) FROM aliases WHERE LOWER(alias) = LOWER(aliases1.alias)
-                )
+              AND (aliases1.entry_hash IS NOT NULL OR aliases1.entry_uuid IS NOT NULL)
+              AND aliases1.timestamp = (
+                SELECT MAX(timestamp) FROM aliases WHERE LOWER(alias) = LOWER(aliases1.alias)
+              )
             ORDER BY timestamp DESC
             LIMIT ?
             """,
@@ -2378,8 +2428,9 @@ def set_aliases_by_uuid(
     for existing_alias in existing_aliases:
         if existing_alias not in aliases:  # should remove existing_alias
             if (
-                "archive_mode" in quasilattice.config
-                and not quasilattice.config["archive_mode"]
+                "quasilattice" in quasilattice.config
+                and "archive_mode" in quasilattice.config["quasilattice"]
+                and not quasilattice.config["quasilattice"]["archive_mode"]
             ):
                 # delete existing alias
                 cursor.execute(
@@ -2446,8 +2497,9 @@ def remove_alias_by_uuid(
     existing_aliases = read_aliases_by_uuid(cursor, entry_uuid)
     if alias in existing_aliases:  # should remove alias
         if (
-            "archive_mode" in quasilattice.config
-            and not quasilattice.config["archive_mode"]
+            "quasilattice" in quasilattice.config
+            and "archive_mode" in quasilattice.config["quasilattice"]
+            and not quasilattice.config["quasilattice"]["archive_mode"]
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
@@ -2476,8 +2528,9 @@ def set_aliases_by_hash(
     for existing_alias in existing_aliases:
         if existing_alias not in aliases:  # should remove existing_alias
             if (
-                "archive_mode" in quasilattice.config
-                and not quasilattice.config["archive_mode"]
+                "quasilattice" in quasilattice.config
+                and "archive_mode" in quasilattice.config["quasilattice"]
+                and not quasilattice.config["quasilattice"]["archive_mode"]
             ):
                 # delete existing alias
                 cursor.execute(
@@ -2546,8 +2599,9 @@ def remove_alias_by_hash(
     existing_aliases = read_aliases_by_hash(cursor, entry_hash)
     if alias in existing_aliases:  # should remove alias
         if (
-            "archive_mode" in quasilattice.config
-            and not quasilattice.config["archive_mode"]
+            "quasilattice" in quasilattice.config
+            and "archive_mode" in quasilattice.config["quasilattice"]
+            and not quasilattice.config["quasilattice"]["archive_mode"]
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
@@ -2574,8 +2628,9 @@ def remove_alias(
     existing_aliases = read_alias_row(cursor, alias)
     if existing_aliases is not None:  # should remove alias
         if (
-            "archive_mode" in quasilattice.config
-            and not quasilattice.config["archive_mode"]
+            "quasilattice" in quasilattice.config
+            and "archive_mode" in quasilattice.config["quasilattice"]
+            and not quasilattice.config["quasilattice"]["archive_mode"]
         ):
             # delete existing alias
             cursor.execute("DELETE FROM aliases WHERE alias = ? ", (alias,))
@@ -2742,8 +2797,9 @@ def convert_alias_to_dict(alias_tuple: sqlite3.Row | tuple) -> dict:
 
 def _delete_outdated_aliases_if_not_in_archive_mode(cursor: sqlite3.Cursor):
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         # delete outdated alias rows
         cursor.execute(
@@ -3215,8 +3271,9 @@ def convert_read_access_to_dict(read_access_tuple: sqlite3.Row | tuple) -> dict:
 
 def _delete_outdated_read_access_if_not_in_archive_mode(cursor: sqlite3.Cursor):
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         # delete outdated read_access rows
         cursor.execute(
@@ -3701,8 +3758,9 @@ def convert_write_access_to_dict(write_access_tuple: sqlite3.Row | tuple) -> dic
 
 def _delete_outdated_write_access_if_not_in_archive_mode(cursor: sqlite3.Cursor):
     if (
-        "archive_mode" in quasilattice.config
-        and not quasilattice.config["archive_mode"]
+        "quasilattice" in quasilattice.config
+        and "archive_mode" in quasilattice.config["quasilattice"]
+        and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
         # delete outdated write_access rows
         cursor.execute(
