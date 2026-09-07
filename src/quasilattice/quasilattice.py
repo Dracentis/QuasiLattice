@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import logging
 import logging.handlers
 import os
+import shutil
 import sys
 import threading
 import time
@@ -362,7 +365,9 @@ def run(
 
 
 # region entries
-def entry(entry_id: uuid.UUID | str | bytes, include_deleted: bool = False) -> dict | None:
+def entry(
+    entry_id: uuid.UUID | str | bytes, include_deleted: bool = False
+) -> dict | None:
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
         if isinstance(entry_id, uuid.UUID):
@@ -370,7 +375,9 @@ def entry(entry_id: uuid.UUID | str | bytes, include_deleted: bool = False) -> d
         return quasilattice.database.read_entry_by_id(cursor, entry_id, include_deleted)
 
 
-def entry_hash(entry_id: uuid.UUID | str | bytes, include_deleted: bool = False) -> bytes | None:
+def entry_hash(
+    entry_id: uuid.UUID | str | bytes, include_deleted: bool = False
+) -> bytes | None:
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
         if isinstance(entry_id, uuid.UUID):
@@ -544,7 +551,7 @@ def write_entry(
     entry_dict: dict,
     edited_by: str = "",
     api_key_id: str | None = None,
-):
+) -> bytes:
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
         entry_id = quasilattice.database.write_entry_dict(
@@ -560,6 +567,7 @@ def write_entry(
                     cursor, entry_id, edited_by, api_key_id
                 )
         connection.commit()
+        return entry_id
 
 
 def delete_entry(
@@ -569,11 +577,11 @@ def delete_entry(
 ):
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        if isinstance(entry_id, uuid.UUID):
-            entry_id = entry_id.bytes
         if not quasilattice.database.entry_exists(cursor, entry_id):
             raise ValueError("Entry " + str(entry_id) + "does not exist!")
-        if isinstance(entry_id, str):
+        if isinstance(entry_id, uuid.UUID):
+            entry_id = entry_id.bytes
+        elif isinstance(entry_id, str):
             entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
         if len(entry_id) == 16:
             quasilattice.database.delete_entry_by_uuid(
@@ -586,8 +594,11 @@ def delete_entry(
         connection.commit()
 
 
-def undelete_entry(entry_id: uuid.UUID | str | bytes, edited_by: str = "",
-    api_key_id: str | None = None,) -> bool:
+def undelete_entry(
+    entry_id: uuid.UUID | str | bytes,
+    edited_by: str = "",
+    api_key_id: str | None = None,
+) -> bool:
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
         if isinstance(entry_id, uuid.UUID):
@@ -595,9 +606,13 @@ def undelete_entry(entry_id: uuid.UUID | str | bytes, edited_by: str = "",
         elif isinstance(entry_id, str):
             entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
         if len(entry_id) == 16:
-            success = quasilattice.database.undelete_entry_by_uuid(cursor, entry_id, edited_by, api_key_id)
+            success = quasilattice.database.undelete_entry_by_uuid(
+                cursor, entry_id, edited_by, api_key_id
+            )
         elif len(entry_id) == 32:
-            success = quasilattice.database.undelete_entry_by_hash(cursor, entry_id, edited_by, api_key_id)
+            success = quasilattice.database.undelete_entry_by_hash(
+                cursor, entry_id, edited_by, api_key_id
+            )
         if success:
             connection.commit()
     return success
@@ -607,25 +622,29 @@ def undelete_entry(entry_id: uuid.UUID | str | bytes, edited_by: str = "",
 
 
 # region aliases
-def aliases(entry_alias: str | bytes | None = None, limit: int = 500) -> list[str]:
+def aliases(
+    entry_id: uuid.UUID | str | bytes | None = None, limit: int = 500
+) -> list[str]:
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        if entry_alias is None:
+        if entry_id is None:
             return quasilattice.database.read_aliases_before_time(
                 cursor, time.time(), limit
             )
-        if isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        if len(entry_alias) == 16:
-            return quasilattice.database.read_aliases_by_uuid(entry_alias)
-        elif len(entry_alias) == 32:
-            return quasilattice.database.read_aliases_by_hash(entry_alias)
+        if isinstance(entry_id, uuid.UUID):
+            entry_id = entry_id.bytes
+        elif isinstance(entry_id, str):
+            entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
+        if len(entry_id) == 16:
+            return quasilattice.database.read_aliases_by_uuid(cursor, entry_id)
+        elif len(entry_id) == 32:
+            return quasilattice.database.read_aliases_by_hash(cursor, entry_id)
     return []
 
 
 def add_alias(
     alias: str,
-    entry_alias: str | bytes,
+    entry_id: uuid.UUID | str | bytes,
     edited_by: str = "",
     api_key_id: str | None = None,
     allow_deleted_entry: bool = False,
@@ -633,21 +652,169 @@ def add_alias(
     """Adds a new alias to an existing entry identified by entry_alias."""
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        if isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
         if not quasilattice.database.entry_exists(
-            cursor, entry_alias, allow_deleted_entry
+            cursor, entry_id, allow_deleted_entry
         ):
-            raise ValueError("Entry " + str(entry_alias) + "does not exist!")
-        if len(entry_alias) == 16:
+            raise ValueError("Entry " + str(entry_id) + "does not exist!")
+        if isinstance(entry_id, uuid.UUID):
+            entry_id = entry_id.bytes
+        elif isinstance(entry_id, str):
+            entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
+        if len(entry_id) == 16:
             quasilattice.database.add_alias_by_uuid(
-                cursor, entry_alias, alias, edited_by, api_key_id
+                cursor, entry_id, alias, edited_by, api_key_id
             )
-        elif len(entry_alias) == 32:
+        elif len(entry_id) == 32:
             quasilattice.database.add_alias_by_hash(
-                cursor, entry_alias, alias, edited_by, api_key_id
+                cursor, entry_id, alias, edited_by, api_key_id
             )
         connection.commit()
+
+
+def remove_alias(
+    alias: str,
+    entry_id: uuid.UUID | str | bytes,
+    edited_by: str = "",
+    api_key_id: str | None = None,
+    allow_deleted_entry: bool = False,
+):
+    """Removes a alias from an existing entry identified by entry_alias."""
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if not quasilattice.database.entry_exists(
+            cursor, entry_id, allow_deleted_entry
+        ):
+            raise ValueError("Entry " + str(entry_id) + "does not exist!")
+        if isinstance(entry_id, uuid.UUID):
+            entry_id = entry_id.bytes
+        elif isinstance(entry_id, str):
+            entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
+        if len(entry_id) == 16:
+            quasilattice.database.remove_alias_by_uuid(
+                cursor, entry_id, alias, edited_by, api_key_id
+            )
+        elif len(entry_id) == 32:
+            quasilattice.database.remove_alias_by_hash(
+                cursor, entry_id, alias, edited_by, api_key_id
+            )
+        connection.commit()
+
+
+# endregion
+
+
+# region files
+@contextlib.contextmanager
+def file(file_id: uuid.UUID | str | bytes):
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if isinstance(file_id, uuid.UUID):
+            file_id = file_id.bytes
+        elif isinstance(file_id, str):
+            file_id = quasilattice.database.resolve_entry_alias(cursor, file_id)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, file_id)
+        if entry_dict is None:
+            file_dir = os.path.join(
+                config["quasilattice"]["files_dir"], file_id.hex()[0:3]
+            )
+            with open(os.path.join(file_dir, file_id.hex() + ".file"), "r") as file_handle:
+                yield file_handle
+        if "file_hash" not in entry_dict or not isinstance(
+            entry_dict["file_hash"], str
+        ):
+            raise FileNotFoundError(f"Entry {file_id} not a file.")
+        else:
+            file_dir = os.path.join(
+                config["quasilattice"]["files_dir"], entry_dict["file_hash"][0:3]
+            )
+            with open(os.path.join(file_dir, entry_dict["file_hash"] + ".file"), "r") as file_handle:
+                yield file_handle
+
+
+def add_file(
+    path_to_file: str,
+    entry_id: uuid.UUID | str | bytes | None = None,
+    edited_by: str = "",
+    api_key_id: str | None = None,
+    file_hash: bytes | None = None,
+    as_reference: bool = False,
+) -> bytes:
+    sha256 = hashlib.sha256()
+    with open(path_to_file, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    if file_hash is None:
+        file_hash = sha256.digest()
+    elif file_hash != sha256.digest():
+        raise ValueError(
+            f"Hash mismatch for {path_to_file}: expected {file_hash.hex()}, got {sha256.digest().hex()}"
+        )
+
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if entry_id is None:
+            entry_id = quasilattice.database.write_entry_dict(
+                {
+                    "is_file": True,
+                    "file_hash": file_hash.hex(),
+                    "timestamp": time.time(),
+                    "uuid": str(uuid.uuid4()),
+                }
+            )
+        else:
+            if not quasilattice.database.entry_exists(cursor, entry_id):
+                raise ValueError("Entry " + str(entry_id) + "does not exist!")
+            if isinstance(entry_id, uuid.UUID):
+                entry_id = entry_id.bytes
+            elif isinstance(entry_id, str):
+                entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
+            entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_id)
+            if (
+                "is_file" not in entry_dict
+                or not entry_dict["is_file"]
+                or "file_hash" not in entry_dict
+                or entry_dict["file_hash"] == file_hash.hex()
+            ):
+                entry_dict["is_file"] = True
+                entry_dict["file_hash"] = file_hash.hex()
+                if "uuid" not in entry_dict:
+                    entry_dict["uuid"] = str(uuid.uuid4())
+                if "timestamp" not in entry_dict:
+                    entry_dict["timestamp"] = time.time()
+                entry_id = quasilattice.database.write_entry_dict(
+                    entry_dict, edited_by, api_key_id
+                )
+        if config["quasilattice"]["generate_default_aliases"]:
+            if len(entry_id) == 16:
+                quasilattice.database.write_default_alias_by_uuid(
+                    cursor, entry_id, edited_by, api_key_id
+                )
+            elif len(entry_id) == 32:
+                quasilattice.database.write_default_alias_by_hash(
+                    cursor, entry_id, edited_by, api_key_id
+                )
+        if as_reference:
+            quasilattice.database.reference_file(cursor, file_hash, path_to_file, False)
+        else:
+            file_dir = os.path.join(
+                config["quasilattice"]["files_dir"], file_hash.hex()[0:3]
+            )
+            os.makedirs(file_dir, exist_ok=True)
+            shutil.copy2(
+                path_to_file, os.path.join(file_dir, file_hash.hex() + ".file")
+            )
+        connection.commit()
+    return entry_id
+
+
+def remove_file(
+    file_id: uuid.UUID | str | bytes,
+    edited_by: str = "",
+    api_key_id: str | None = None,
+):
+    """Remove a file from an existing entry or, if file_id is the hash of a file, remove that file from all entries.
+    In archive_mode, this only marks entries as deleted and does not delete the file."""
+    raise NotImplementedError()  # TODO: implement this
 
 
 # endregion

@@ -250,16 +250,16 @@ def validate_database(db_path=None):
                     "CREATE INDEX index_write_access_timestamp ON write_access(timestamp)"
                 )
 
-            # create linked_files table
+            # create referenced_files table
             sql_cursor.execute(
-                """SELECT name FROM sqlite_master WHERE type='table' AND name='linked_files';"""
+                """SELECT name FROM sqlite_master WHERE type='table' AND name='referenced_files';"""
             )
             if sql_cursor.fetchone() == None:
                 sql_cursor.execute("""
-                    CREATE TABLE linked_files (
+                    CREATE TABLE referenced_files (
                         file_hash BLOB PRIMARY KEY NOT NULL,
                         time_file_modified INTEGER,
-                        linked_file_path TEXT
+                        referenced_file_path TEXT
                     )""")
 
             # create metadata_tree table
@@ -1435,9 +1435,11 @@ def read_entries_before_hash(
 
 
 def entry_exists(
-    cursor: sqlite3.Cursor, entry_id: str | bytes, include_deleted: bool = False
+    cursor: sqlite3.Cursor, entry_id: uuid.UUID | str | bytes, include_deleted: bool = False
 ) -> bool:
-    if isinstance(entry_id, str):
+    if isinstance(entry_id, uuid.UUID):
+            entry_id = entry_id.bytes
+    elif isinstance(entry_id, str):
         entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
     cursor.execute(
         f"""
@@ -3785,12 +3787,12 @@ def _delete_outdated_write_access_if_not_in_archive_mode(cursor: sqlite3.Cursor)
 # endregion
 
 
-# region linked_files
-def linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
-    """Return a path to a valid linked file or None."""
+# region referenced_files
+def referenced_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
+    """Return a path to a valid referenced file or None."""
 
     cursor.execute(
-        "SELECT time_file_modified, linked_file_path FROM linked_files WHERE file_hash = ?",
+        "SELECT time_file_modified, referenced_file_path FROM referenced_files WHERE file_hash = ?",
         (file_hash,),
     )
     row = cursor.fetchone()
@@ -3799,7 +3801,7 @@ def linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
         return None
 
     time_file_modified = row["time_file_modified"]
-    file_path = row["linked_file_path"]
+    file_path = row["referenced_file_path"]
 
     if not os.path.isfile(file_path):
         return None
@@ -3815,13 +3817,13 @@ def linked_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
         except OSError:
             return None  # failed to calculate hash
         if sha256.digest() == file_hash:
-            link_file(cursor, file_hash, file_path, False)
+            reference_file(cursor, file_hash, file_path, False) # update reference
         else:
             return None  # hash doesn't match
     return file_path
 
 
-def link_file(cursor, file_hash: bytes, path_to_file: str, verify: bool = True) -> bool:
+def reference_file(cursor: sqlite3.Cursor, file_hash: bytes, path_to_file: str, verify: bool = True) -> bool:
     path_to_file = os.path.abspath(path_to_file)
 
     if not os.path.isfile(path_to_file):
@@ -3839,7 +3841,7 @@ def link_file(cursor, file_hash: bytes, path_to_file: str, verify: bool = True) 
             return False  # hash doesn't match
 
     cursor.execute(
-        "INSERT OR REPLACE INTO linked_files VALUES(?, ?, ?) ",
+        "INSERT OR REPLACE INTO referenced_files VALUES(?, ?, ?) ",
         (file_hash, int(os.path.getmtime(path_to_file)), path_to_file),
     )
 

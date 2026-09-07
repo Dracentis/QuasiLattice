@@ -15,6 +15,23 @@ QuasiLattice can also be configured in "archive_mode", where all changes to the 
 
 v0.4.0 should be considered alpha software. **This version does not implement any authentication and major features are missing!!** It should only be run on localhost or in fully trusted environments. The API will change significantly.
 
+## Installation
+
+To install QuasiLattice with pip, run:
+
+`pip install quasilattice`
+
+If your Python environment is externally managed, you may need to [create a virtual environment](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments). Next, you can optionally setup the background service by running:
+
+`quasilattice setup`
+
+By default, this will create a config file and database in `~/.quasilattice/`, then it will start the http interface in the background at http://127.0.0.1:8312/. You can check the status of the background service by running:
+
+`quasilattice status`
+
+To remove the background service, run: 
+
+`quasilattice remove`
 
 ## FAQ
 

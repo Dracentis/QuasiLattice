@@ -207,9 +207,7 @@ class TestEntries(unittest.TestCase):
             )
 
             test_dict1 = {"entry_property": "entry_property_value"}
-            test_dict1_hash = (
-                "83d2c85022095f67e758f76d3942b74acd84e1ac29109a28db587bd934eddd2b"
-            )
+            test_dict1_hash = "83d2c85022095f67e758f76d3942b74acd84e1ac29109a28db587bd934eddd2b"
             quasilattice.write_entry(
                 test_dict1,
                 "non-existent user",
@@ -225,9 +223,7 @@ class TestEntries(unittest.TestCase):
                 "bool": True,
                 "null": None,
             }
-            test_dict2_hash = (
-                "03f4ad4ef27a169fcb37aaa20806e540546e95ad708d474db97e9d56a38cabf4"
-            )
+            test_dict2_hash = "03f4ad4ef27a169fcb37aaa20806e540546e95ad708d474db97e9d56a38cabf4"
             quasilattice.write_entry(
                 test_dict2,
                 "non-existent user",

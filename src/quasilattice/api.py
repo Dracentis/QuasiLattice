@@ -183,25 +183,25 @@ def get_write_access():
 @app.get("/api/html/{entry_alias}")
 def get_entry_html(entry_alias: str, q: str | None = None):
     """Returns the rendered html of an entry. Renders the markup_language specified by the entry to html."""
-    return "html"
+    return "html" # TODO: implement this
 
 
 @app.get("/api/markup/{entry_alias}")
 def get_entry_markup_content(entry_alias: str, q: str | None = None):
     """Returns the original markup content of an entry."""
-    return "md"
+    return "md" # TODO: implement this
 
 
 @app.post("/api/json/{entry_alias}")
 def post_entry_json(entry_alias: str):
     """Write data to an entry."""
-    return 200
+    return 200 # TODO: implement this
 
 
 @app.get("/api/json/{entry_alias}")
 def get_entry_json(entry_alias: str, q: str | None = None):
     """Returns the canonical json for one or more entries."""
-    return {"alias": entry_alias, "q": q}
+    return {"alias": entry_alias, "q": q} # TODO: implement this
 
 
 @app.get("/api/hash/{entry_alias}")
@@ -245,12 +245,12 @@ def get_index():
             {entry_hashes!s}
         </body>
     </html>
-    """
+    """ # TODO: implement this
 
 @app.get("/{entry_alias}")
 def get_entry(entry_alias: str, q: str | None = None):
     """Returns the rendered html of an entry or the raw file contents if is_file is true."""
-    return {"alias": entry_alias, "q": q}
+    return {"alias": entry_alias, "q": q} # TODO: implement this
 
 
 def quasilattice_openapi():

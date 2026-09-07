@@ -46,3 +46,6 @@ line-length = 88
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ruff.lint]
+ignore = ["EXE001","EXE002"]
