@@ -6,21 +6,22 @@ QuasiLattice organizes data into "entries". Any file or JSON object is a valid Q
 
 Each QuasiLattice node maintains a list of entries and controls who has access to read and write to that list of entries.
 
-Nodes can be configured to sync data with other nodes. This allows anybody to archive data from other QuasiLattice nodes. In protocols that support it, these mirrors provide bandwidth to reduce to load on the original source node and if the original source node fails then the data is still accessible. Every entry is canonically stored according to the JSON [[RFC8259](https://tools.ietf.org/html/rfc8259)] subset, so hashes of entries can be compared between nodes.
+Nodes can be configured to sync data with other nodes. This allows anybody to archive data from other QuasiLattice nodes. In protocols that support it, these mirrors provide bandwidth to reduce to load on the original source node and if the original source node fails then the data is still accessible. Every entry is canonically stored according to the JSON [[RFC8785](https://www.rfc-editor.org/info/rfc8785/)] subset, so hashes of entries can be compared between nodes.
 
 QuasiLattice can also be configured in "archive_mode", where all changes to the entries are timestamped and nothing is deleted. In this mode, QuasiLattice can be used as an archival lab notebook for experimental research. Hashes of these entries could be proactively published online, cryptographically proving the timeline of scholarly work to third parties.
 
 
 ## It's Early Days
 
-v0.4.0 should be considered alpha software. **This version does not implement any authentication!!** It should only be run on localhost or in fully trusted environments. It's likely that the API will change significantly. 
+v0.4.0 should be considered alpha software. **This version does not implement any authentication and major features are missing!!** It should only be run on localhost or in fully trusted environments. The API will change significantly.
 
 
 ## FAQ
 
-1. **Where's the specification?** I'm working on it! I plan on implementing and testing the full protocol before releasing the first version of the specification. Stay tuned!
-2. **Why do version numbers start at v0.4.0?** This project has actually been under development since 2021, although under a different name (Lattice). An older version of this project was used to create my personal website https://kaedon.net (see [this archive link](https://web.archive.org/web/20231201140459/https://www.kaedon.net/l), if you're curious).
-3. **What "protocols other than HTTP" are you planning?** Reticulum, I2P, Tor, BitTorrent, IPFS to name a few, but I probably won't implement all of them. Once the specification is published, feel free to give one of these a try, but I strongly discourage vibe-coding (see the LLM/AI policy below).
+1. **Where's the specification?** I'm working on it! I plan on implementing and testing the full protocol before releasing the first version of the specification. Stay tuned, but don't expect anything soon. I develop QuasiLattice on my own as a side project while working towards my PhD in experimental condensed matter physics.
+2. **Why the name?** A [Quasicrystal](https://en.wikipedia.org/wiki/Quasicrystal) is a structure that is ordered but not periodic. In QuasiLattice, you built an ordered struture of knowledge and data with no duplicates. I originally started working on QuasiLattice because I was annoyed that large portions of my notes for advanced math classes were duplicates from other classes (mostly the first few weeks of definitions). I wanted a note taking system that allowed me to reuse parts of old notes, build off of them, and reproducably share them with others. 
+3. **Why do version numbers start at v0.4.0?** This project has actually been under development since 2021, although under a different name (Lattice). An older version of this project was used to create my personal website https://kaedon.net (see [this archive link](https://web.archive.org/web/20231201140459/https://www.kaedon.net/l), if you're curious).
+4. **What "protocols other than HTTP" are you planning?** Reticulum, I2P, Tor, BitTorrent, IPFS to name a few, but I probably won't implement all of them. Once the specification is published, feel free to give one of these a try, but I strongly discourage vibe-coding (see the LLM/AI policy below).
 
 
 ## Plugins

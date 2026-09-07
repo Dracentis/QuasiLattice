@@ -943,6 +943,63 @@ def read_entry_rows_by_hash(
     return cursor.fetchall()
 
 
+def read_all_entries(
+    cursor: sqlite3.Cursor,
+    limit: int = 500,
+    include_deleted: bool = False,
+    order_by_hash: bool = False,
+) -> list[dict]:
+    """Returns a list of multiple (not deleted) entries by hashes."""
+    return [
+        convert_entry_row_to_dict(row)
+        for row in read_all_entry_rows(
+            cursor, limit, include_deleted, order_by_hash
+        )
+    ]
+
+
+def read_all_entry_rows(
+    cursor: sqlite3.Cursor,
+    limit: int = 500,
+    include_deleted: bool = False,
+    order_by_hash: bool = False,
+) -> list[sqlite3.Row]:
+    """Returns a list of multiple (not deleted) entry rows by hash."""
+    if include_deleted or (
+        "archive_mode" in quasilattice.config
+        and not quasilattice.config["archive_mode"]
+    ):
+        cursor.execute(
+            f"""
+            SELECT * FROM entries
+            ORDER BY {"hash DESC" if order_by_hash else "timestamp DESC, hash DESC"}
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    else:
+        cursor.execute(
+            f"""
+            SELECT entries.*
+            FROM edit_log
+            JOIN entries ON entries.hash = edit_log.entry_hash
+            WHERE edit_log.is_deletion = 0
+                AND (edit_log.timestamp, edit_log.entry_hash) = (
+                    SELECT latest.timestamp, latest.entry_hash
+                    FROM edit_log AS latest
+                    WHERE latest.entry_hash = edit_log.entry_hash
+                    ORDER BY latest.timestamp DESC, latest.entry_hash DESC
+                    LIMIT 1
+                )
+            ORDER BY {"entries.hash DESC" if order_by_hash else "entries.timestamp DESC, entries.hash DESC"}
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+    return cursor.fetchall()
+
+
 def read_entry_versions(
     cursor: sqlite3.Cursor,
     entry_uuid: bytes,
@@ -1003,6 +1060,31 @@ def read_entry_version_rows(
 
     return cursor.fetchall()
 
+
+def read_entry_uuids(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
+    cursor.execute(
+            """
+            SELECT DISTINCT uuid FROM entries
+            ORDER BY uuid ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    rows = cursor.fetchall()
+    return [row["uuid"] for row in rows]
+
+
+def read_entry_hashes(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
+    cursor.execute(
+            """
+            SELECT DISTINCT hash FROM entries
+            ORDER BY hash ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    rows = cursor.fetchall()
+    return [row["hash"] for row in rows]
 
 def read_entry_hash(cursor: sqlite3.Cursor, entry_uuid: bytes) -> bytes | None:
     """Returns the hash of the most recent (not deleted) version of an entry or None."""
@@ -1357,7 +1439,7 @@ def read_entries_by_filter(
     include_outdated: bool = False,
     include_deleted: bool = False,
     order_by_hash: bool = False,
-) -> list[sqlite3.Row]:
+) -> list[dict]:
     """Returns a list of all (not deleted and not outdated) entries that match the filter."""
     return [
         convert_entry_row_to_dict(row)
@@ -1573,10 +1655,9 @@ def write_entry_dict(
 
     # write metadata
     for key, value in entry_dict.items():
-        if not is_entry_property_stored_in_columns(key, value):
-            write_metadata_tree_rows_by_key_value(
-                cursor, entry_hash, new_timestamp, key, value
-            )
+        write_metadata_tree_rows_by_key_value(
+            cursor, entry_hash, new_timestamp, key, value
+        )
 
 
 def delete_entry_by_uuid(
@@ -2127,6 +2208,22 @@ def read_alias_row(cursor: sqlite3.Cursor, alias: str) -> sqlite3.Row | None:
         )
     return cursor.fetchone()
 
+def resolve_entry_alias(cursor: sqlite3.Cursor, entry_alias: str) -> bytes:
+    alias_row = read_alias_row(cursor, entry_alias)
+    if alias_row["entry_uuid"] is not None:
+        entry_alias = bytes(alias_row["entry_uuid"])
+    elif alias_row["entry_hash"] is not None:
+        entry_alias = bytes(alias_row["entry_hash"])
+    else:
+        try:
+            entry_alias = "".join(
+                c for c in entry_alias if c in "0123456789abcdefABCDEF"
+            )
+            entry_alias = bytes.fromhex(entry_alias)
+        except (TypeError, ValueError):
+            return b""
+    return b""
+
 
 def read_alias_rows_by_alias(
     cursor: sqlite3.Cursor,
@@ -2166,7 +2263,7 @@ def read_alias_rows_by_alias(
 
 
 def read_alias_rows_after_time(
-    cursor: sqlite3.Cursor, after_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, after_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of alias rows after after_time."""
     cursor.execute(
@@ -2180,8 +2277,45 @@ def read_alias_rows_after_time(
     return cursor.fetchall()
 
 
+def read_aliases_before_time(cursor: sqlite3.Cursor, before_time: float, limit: int = 500) -> list[str]:
+    """Returns a list of current alises that were most recently edited before before_time"""
+    case_sensitive = quasilattice.config["quasilattice"]["case_sensitive_aliases"]
+    if case_sensitive:
+        cursor.execute(
+            """
+            SELECT * FROM aliases AS aliases1
+            WHERE aliases1.timestamp < ?
+                AND aliases1.timestamp = (
+                    SELECT MAX(timestamp) FROM aliases WHERE alias = aliases1.alias
+                )
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (before_time, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT * FROM aliases AS aliases1
+            WHERE aliases1.timestamp < ?
+                AND aliases1.timestamp = (
+                    SELECT MAX(timestamp) FROM aliases WHERE LOWER(alias) = LOWER(aliases1.alias)
+                )
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (before_time, limit),
+        )
+    rows = cursor.fetchall()
+    output = []
+    for row in rows:
+        if row["entry_uuid"] is not None and row["entry_hash"] is not None:
+            output.append(row["alias"])
+    return output
+
+
 def read_alias_rows_before_time(
-    cursor: sqlite3.Cursor, before_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, before_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of alias rows before before_time."""
     cursor.execute(
@@ -2715,7 +2849,7 @@ def read_read_access_rows_by_hash(
 
 
 def read_read_access_rows_after_time(
-    cursor: sqlite3.Cursor, after_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, after_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of read_access rows after after_time."""
     cursor.execute(
@@ -2730,7 +2864,7 @@ def read_read_access_rows_after_time(
 
 
 def read_read_access_rows_before_time(
-    cursor: sqlite3.Cursor, before_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, before_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of read_access rows before before_time."""
     cursor.execute(
@@ -3197,7 +3331,7 @@ def read_write_access_rows_by_hash(
 
 
 def read_write_access_rows_after_time(
-    cursor: sqlite3.Cursor, after_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, after_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of write_access rows after after_time."""
     cursor.execute(
@@ -3212,7 +3346,7 @@ def read_write_access_rows_after_time(
 
 
 def read_write_access_rows_before_time(
-    cursor: sqlite3.Cursor, before_time: int, limit: int = 500
+    cursor: sqlite3.Cursor, before_time: float, limit: int = 500
 ) -> list[sqlite3.Row]:
     """Returns a list of write_access rows before before_time."""
     cursor.execute(

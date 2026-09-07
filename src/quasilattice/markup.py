@@ -205,19 +205,17 @@ def markdown_embed_renderer(md: markdown_it.MarkdownIt, max_depth: int = 6):
         meta = tokens[idx].meta
         target, heading, alias = meta["target"], meta["heading"], meta["alias"]
 
-        entry_uuid = "uuid"  # get_entry_uuid(target) # TODO: implement
-        if entry_uuid is None or entry_uuid in stack or len(stack) >= max_depth:
+        entry_id = bytes("4572835")# TODO: load uuid, hash or None
+        if entry_id is None or entry_id in stack or len(stack) >= max_depth:
             return f"[[{html.escape(target)}]]"
 
         content = "CONTENT"  # quasilattice.database.read_entry_content_by_uuid(entry_uuid) # TODO: implement
         if heading:
             content = markdown_extract_section(content, heading)
 
-        stack.append(entry_uuid)
+        stack.append(entry_id)
         html_str = md.render(content, env)
         stack.pop()
-
-        # TODO: do something with alias
 
         return html_str
 

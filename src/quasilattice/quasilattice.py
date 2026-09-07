@@ -10,7 +10,7 @@ import typing
 
 import tomllib
 
-from . import database
+import quasilattice.database
 
 config = {}
 config_path = os.path.expanduser("~/.quasilattice/config.toml")
@@ -120,7 +120,7 @@ def init(
         logger.debug(f"Config file successfully loaded from {config_path}")
 
     # init database
-    database.validate_database()
+    quasilattice.database.validate_database()
 
     # create files directory
     os.makedirs(config["quasilattice"]["files_dir"], exist_ok=True)
@@ -156,7 +156,9 @@ def validate_config():
         config["quasilattice"]["generate_default_aliases"] = True
     if "default_alias_length" not in config["quasilattice"]:
         config["quasilattice"]["default_alias_length"] = 4
-    current_default_alias_length = max(current_default_alias_length, config["quasilattice"]["default_alias_length"])
+    current_default_alias_length = max(
+        current_default_alias_length, config["quasilattice"]["default_alias_length"]
+    )
     if "default_alias_characters" not in config["quasilattice"]:
         config["quasilattice"]["default_alias_characters"] = "0123456789acdefhjkmnprtwz"
     if "default_alias_timeout_ms" not in config["quasilattice"]:
@@ -195,11 +197,11 @@ def validate_config():
     if "enabled" not in config["http"]:
         config["http"]["enabled"] = True
     if "host" not in config["http"]:
-        config["http"]["host"] = "0.0.0.0"
+        config["http"]["host"] = "127.0.0.1"
     if "port" not in config["http"]:
         config["http"]["port"] = 8312
     if "require_authentication" not in config["http"]:
-        config["http"]["require_authentication"] = True
+        config["http"]["require_authentication"] = False
     if "api_key_length" not in config["http"]:
         config["http"]["api_key_length"] = 20
 
@@ -298,8 +300,8 @@ host = "127.0.0.1"
 # Port to bind to (default: 8312):
 port = 8312
 
-# Require authentication for the http interface (default: true):
-require_authentication = true
+# Require authentication for the http interface (default: false):
+require_authentication = false
 
 # Number of characters in API keys (default: 20):
 api_key_length = 20
@@ -350,32 +352,151 @@ def run(
             time.sleep(1800)  # sleep to keep the process running
 
 
-def entry(uuid_alias: str | bytes) -> dict | None:
-    with database.connection() as connection:
+def entry(entry_alias: str | bytes, include_deleted: bool = False) -> dict | None:
+    with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        row = database.read_entry_row(cursor, uuid_alias)
-        connection.commit()
-        cursor.close()
+        if isinstance(entry_alias, str):
+            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        if len(entry_alias) == 16:
+            return quasilattice.database.read_entry_by_uuid(
+                cursor, entry_alias, include_deleted
+            )
+        elif len(entry_alias) == 32:
+            return quasilattice.database.read_entry_by_hash(
+                cursor, entry_alias, include_deleted
+            )
+    return None
 
-    if row is None:
-        return None  # entry not found in database
 
-    entry = database.convert_entry_row_to_dict(row)
-
-    return entry
-
-
-def get_entry_versions(
-    uuid: bytes, max_number_of_versions: int = 500, descending: bool = True
+def entry_versions(
+    entry_uuid: str | bytes,
+    limit: int = 500,
+    include_deleted: bool = True,
+    order_by_hash: bool = True,
 ) -> list[dict]:
-    with database.connection() as connection:
+    with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        rows = database.get_entry_rows(cursor, uuid, max_number_of_versions, descending)
+        return quasilattice.database.read_entry_versions(
+            cursor, entry_uuid, limit, include_deleted, order_by_hash
+        )
+
+
+def entries(
+    entry_aliases: typing.Iterable[str | bytes] = [],
+    limit: int = 500,
+    include_deleted: bool = False,
+) -> set[dict]:
+    """Returns a set of the most recent (not deleted) versions of multiple entries."""
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+
+        if entry_aliases is None or len(entry_aliases) == 0:
+            return quasilattice.database.read_all_entries(
+                cursor, limit, include_deleted
+            )
+
+        entry_uuids: list[bytes] = []
+        entry_hashes: list[bytes] = []
+        entry_aliases_str: list[str] = []
+        for entry_alias in entry_aliases:
+            if isinstance(entry_alias, str):
+                entry_aliases_str.append(entry_alias)
+            else:
+                if len(entry_alias) == 16:
+                    entry_uuids.append(entry_alias)
+                elif len(entry_alias) == 32:
+                    entry_hashes.append(entry_alias)
+        alias_rows = quasilattice.database.read_alias_rows_by_alias(
+            cursor, entry_aliases_str, limit
+        )
+
+        found_aliases = []
+        for alias_row in alias_rows:
+            if alias_row["entry_uuid"] is not None:
+                entry_uuids.append()
+                found_aliases.append(
+                    alias_row["alias"]
+                    if config["quasilattice"]["case_sensitive_aliases"]
+                    else alias_row["alias"].lower()
+                )
+            elif alias_row["entry_hash"] is not None:
+                entry_hashes.append()
+                found_aliases.append(alias_row["alias"])
+
+        for entry_alias in entry_aliases_str:  # process remaining aliases
+            if entry_alias.lower() in found_aliases:
+                entry_aliases_str.remove(entry_alias)
+            else:
+                try:
+                    entry_alias = "".join(
+                        c for c in entry_alias if c in "0123456789abcdefABCDEF"
+                    )
+                    entry_alias = bytes.fromhex(entry_alias)
+                    if len(entry_alias) == 16:
+                        entry_uuids.append(entry_alias)
+                    elif len(entry_alias) == 32:
+                        entry_hashes.append(entry_alias)
+                    else:
+                        entry_aliases_str.remove(entry_alias)
+                except (TypeError, ValueError):
+                    entry_aliases_str.remove(entry_alias)
+
+        output = set[dict]()
+        output.update(
+            quasilattice.database.read_entries_by_uuid(
+                cursor, entry_uuids, limit, include_deleted
+            )
+        )
+        output.update(
+            quasilattice.database.read_entries_by_hash(
+                cursor, entry_hashes, limit, include_deleted
+            )
+        )
+        return output
+
+
+def entries_by_filter(
+    filter: str,
+    limit: int = 500,
+    include_outdated: bool = True,
+    include_deleted: bool = True,
+    order_by_hash: bool = True,
+) -> list[dict]:
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        return quasilattice.database.read_entries_by_filter(
+            cursor, filter, limit, include_outdated, include_deleted, order_by_hash
+        )
+
+
+def write_entry(entry_dict: dict, edited_by: str = "", api_key_id: str | None = None):
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        quasilattice.database.write_entry_dict(
+            cursor, entry_dict, edited_by, api_key_id
+        )
         connection.commit()
-        cursor.close()
 
-    entry_versions = []
-    for row in rows:
-        entry_versions.append(database.convert_entry_row_to_dict(row))
 
-    return entry_versions
+def delete_entry(entry_alias: str | bytes):
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if isinstance(entry_alias, str):
+            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        if len(entry_alias) == 16:
+            quasilattice.database.delete_entry_by_hash(entry_alias)
+        elif len(entry_alias) == 32:
+            quasilattice.database.delete_entry_by_uuid(entry_alias)
+        connection.commit()
+
+
+def undelete_entry(entry_alias: str | bytes):
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if isinstance(entry_alias, str):
+            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        if len(entry_alias) == 16:
+            quasilattice.database.undelete_entry_by_hash(entry_alias)
+        elif len(entry_alias) == 32:
+            quasilattice.database.undelete_entry_by_uuid(entry_alias)
+        connection.commit()

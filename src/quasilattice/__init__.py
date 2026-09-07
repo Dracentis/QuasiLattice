@@ -9,3 +9,5 @@ del _name
 
 def __getattr__(name):
     return getattr(_quasilattice, name)
+
+_quasilattice.init()

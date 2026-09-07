@@ -6,11 +6,13 @@ import typing
 import uuid
 
 import fastapi
+import fastapi.responses
 import fastapi.security
 import jwt
 import pwdlib
 
 import quasilattice
+import quasilattice.database
 
 # code for generating uuids:
 # random_uuid = uuid.uuid4() # generate a random uuid
@@ -46,12 +48,11 @@ def verify_api_key_hash(api_key: str, hashed_api_key: str) -> bool:
     return secrets.compare_digest(generate_api_key_hash(api_key), hashed_api_key)
 
 
-# TODO: implement login()
+# TODO: login()
 # TODO: logout()
 # TODO: get_current_user()
 # TODO: is_admin()
-# TODO: has_read_permission(entry_uuid)
-# TODO: has_write_permission(entry_uuid)
+# TODO: enforce read and write access
 
 
 @app.get("/api")
@@ -61,28 +62,29 @@ def get_api():
 
 @app.get("/api/login")
 def get_login():
-    return "TODO: IMPLEMENT LOGIN"
+    return "TODO: Implement login"
 
 
 @app.get("/api/logout")
 def get_logout():
-    return "TODO: IMPLEMENT LOGOUT"
+    return "TODO: Implement logout"
 
 
-@app.get("/api/users") # MAKE THIS MORE RESTful
+@app.get("/api/users")
 def get_users(): # only allowed for admin
-    return ["kaedon", "stm1_scanning_computer"]
+    return "TODO: Implement get users"
 
 
 @app.get("/api/keys")
 def get_api_keys():
-    return {
-        "key_id": {"note": "STM upload system.", "owner": "stm1"},
-        "other_key_id": {
-            "note": "STM upload system.",
-            "owner": "stm1", # note: don't include owner unless the user is admin
-        },
-    }
+    return "TODO: Implement get api_keys"
+    #return {
+    #    "key_id": {"note": "STM upload system.", "owner": "stm1"},
+    #    "other_key_id": {
+    #        "note": "STM upload system.",
+    #        "owner": "stm1", # note: don't include owner unless the user is admin
+    #    },
+    #}
 
 
 @app.get("/api/access/{entry_alias}")
@@ -125,7 +127,7 @@ def get_access():
         }
     }
     """
-    return "access"
+    return "TODO: Implement get access"
 
 
 @app.get("/api/read_access/{entry_alias}")
@@ -150,7 +152,7 @@ def get_read_access():
         }
     }
     """
-    return "read_access"
+    return "TODO: Implement get read_access"
 
 
 @app.get("/api/write_access/{entry_alias}")
@@ -175,7 +177,7 @@ def get_write_access():
         }
     }
     """
-    return "write_access"
+    return "TODO: Implement get write_access"
 
 
 @app.get("/api/html/{entry_alias}")
@@ -190,9 +192,16 @@ def get_entry_markup_content(entry_alias: str, q: str | None = None):
     return "md"
 
 
+@app.post("/api/json/{entry_alias}")
+def post_entry_json(entry_alias: str):
+    """Write data to an entry."""
+    return 200
+
+
 @app.get("/api/json/{entry_alias}")
 def get_entry_json(entry_alias: str, q: str | None = None):
     """Returns the canonical json for one or more entries."""
+    return {"alias": entry_alias, "q": q}
 
 
 @app.get("/api/hash/{entry_alias}")
@@ -205,7 +214,7 @@ def get_entry_hash(entry_alias: str, q: str | None = None):
     {"uuid":"1b378cf8139cf3719387c917cf9f1743002568","uuid":"1b378cf8139cf3719387c917cf9f1743002568"}
 
     """
-    return
+    return "TODO: Implement get entry hash"
 
 
 @app.get("/api/hash_list")
@@ -218,8 +227,25 @@ def get_hash_list():
     {"uuid":"1b378cf8139cf3719387c917cf9f1743002568","uuid":"1b378cf8139cf3719387c917cf9f1743002568"}
 
     """
-    return
+    return "TODO: Implement get hash list"
 
+@app.get("/", response_class=fastapi.responses.HTMLResponse)
+def get_index():
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        entry_hashes = quasilattice.database.read_entry_hashes(cursor)
+        return f"""
+    <html>
+        <head>
+            <title>Welcome to QuasiLattice</title>
+        </head>
+        <body>
+            <h1>Welcome to QuasiLattice</h1>
+            You've successfully setup QuasiLattice!
+            {entry_hashes!s}
+        </body>
+    </html>
+    """
 
 @app.get("/{entry_alias}")
 def get_entry(entry_alias: str, q: str | None = None):
