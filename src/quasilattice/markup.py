@@ -31,25 +31,25 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
 
     # plain text
     if (
-        "markup" not in entry_dict
-        or not isinstance(entry_dict["markup"], str)
-        or entry_dict["markup"].lower() == "plain"
-        or entry_dict["markup"].lower() == "text"
-        or entry_dict["markup"].lower() == "txt"
-        or entry_dict["markup"].lower() == ""
+        "markup_language" not in entry_dict
+        or not isinstance(entry_dict["markup_language"], str)
+        or entry_dict["markup_language"].lower() == "plain"
+        or entry_dict["markup_language"].lower() == "text"
+        or entry_dict["markup_language"].lower() == "txt"
+        or entry_dict["markup_language"].lower() == ""
     ):
         return html.escape(entry_dict["content"])
 
     # html
-    if entry_dict["markup"].lower() == "html":
+    if entry_dict["markup_language"].lower() == "html":
         return nh3.clean(entry_dict["content"])
 
     # markdown
     if (
-        entry_dict["markup"].lower() == "markdown"
-        or entry_dict["markup"].lower() == "md"
-        or entry_dict["markup"].lower() in MARKDOWN_FLAVORS
-        or "github" in entry_dict["markup"].lower()
+        entry_dict["markup_language"].lower() == "markdown"
+        or entry_dict["markup_language"].lower() == "md"
+        or entry_dict["markup_language"].lower() in MARKDOWN_FLAVORS
+        or "github" in entry_dict["markup_language"].lower()
     ):
         return render_entry_markdown_to_html(cursor, entry_dict)
 
@@ -58,7 +58,7 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
     # pandoc
     try:
         return pypandoc.convert_text(
-            entry_dict["content"], "html", format=entry_dict["markup"]
+            entry_dict["content"], "html", format=entry_dict["markup_language"]
         )
     except (RuntimeError, OSError):
         return html.escape(entry_dict["content"])

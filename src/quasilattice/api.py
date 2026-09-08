@@ -40,6 +40,7 @@ app = fastapi.FastAPI()
 
 _PBKDF2_ITERATIONS = 400000
 
+
 class EditorResponse(pydantic.BaseModel):
     content: str
 
@@ -228,25 +229,9 @@ def get_entry_markup_content(entry_alias: str, q: str | None = None):
         return fastapi.responses.HTMLResponse(html.escape(entry_dict["content"]))
 
 
-@app.post("/editor/{entry_alias}")
-def post_entry_json(entry_alias: str, response: EditorResponse):
-    """Write data to an entry."""
-    with quasilattice.database.connection() as connection:
-        cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
-        entry_dict["content"] = response.content
-        entry_dict["timestamp"] = time.time()
-        quasilattice.database.write_entry_dict(cursor,entry_dict,"http_user")
-        connection.commit()
-    return 200
-
-
-@app.get("/editor/{entry_alias}")
-def get_entry_editor(entry_alias: str):
+@app.get("/viewer/{entry_alias}")
+def get_entry_viewer(entry_alias: str):
+    """Returns the rendered html of an entry, with a shortcut to return to the editor. Renders the markup_language specified by the entry to html."""
     original_entry_alias = entry_alias
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
@@ -257,6 +242,91 @@ def get_entry_editor(entry_alias: str):
         entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
         if entry_dict is None:
             raise fastapi.HTTPException(status_code=404, detail="Entry not found")
+        return fastapi.responses.HTMLResponse(
+            quasilattice.markup.render_entry_to_html(cursor, entry_dict)
+            + """<script>
+  const TARGET_URL = "/editor/"""
+            + original_entry_alias
+            + """";
+  document.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      window.location.href = TARGET_URL;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      window.location.href = "/";
+    }
+  });
+</script>"""
+        )
+
+
+@app.post("/editor/{entry_alias}")  # these should be considered temporary
+def post_entry_json(entry_alias: str, response: EditorResponse):
+    """Write content to an entry."""
+    original_entry_alias = entry_alias
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if isinstance(entry_alias, uuid.UUID):
+            entry_alias = entry_alias.bytes
+        elif isinstance(entry_alias, str):
+            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        if entry_dict is None:
+            entry_dict = {
+                "title": original_entry_alias,
+                "is_file": False,
+                "markup_language": "markdown",
+                "uuid": str(uuid.uuid4()),
+            }
+        if "content" not in entry_dict or (entry_dict["content"] != response.content):
+            entry_dict["content"] = response.content
+            entry_dict["timestamp"] = time.time()
+            quasilattice.database.write_entry_dict(cursor, entry_dict, "http_user")
+            if quasilattice.config["quasilattice"]["generate_default_aliases"]:
+                quasilattice.database.write_default_alias_by_uuid(
+                    cursor,
+                    entry_dict["uuid"],
+                    "http_user",
+                )
+
+            # add an alias to this title is it doesn't exist (ignoring UUIDs and hashes)
+            try:
+                original_entry_alias_bytes = bytes.fromhex(
+                    "".join(c for c in entry_alias if c in "0123456789abcdefABCDEF")
+                )
+            except (TypeError, ValueError):
+                original_entry_alias_bytes = b""
+            if len(original_entry_alias_bytes) not in [16, 32]:
+                alias_row = quasilattice.database.read_alias_row(
+                    cursor, original_entry_alias
+                )
+                if alias_row is None or (
+                    alias_row["entry_uuid"] is None and alias_row["entry_hash"] is None
+                ):
+                    quasilattice.database.add_alias_by_uuid(
+                        cursor,
+                        entry_dict["uuid"],
+                        original_entry_alias,
+                        "http_user",
+                    )
+            connection.commit()
+    return 200
+
+
+@app.get("/editor/{entry_alias}")  # these should be considered temporary
+def get_entry_editor(entry_alias: str):
+    original_entry_alias = entry_alias
+    with quasilattice.database.connection() as connection:
+        cursor = connection.cursor()
+        if isinstance(entry_alias, uuid.UUID):
+            entry_alias = entry_alias.bytes
+        elif isinstance(entry_alias, str):
+            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        if entry_dict is None:
+            entry_dict = {"content": "", "uuid": ""}  # Stupid hack, TODO: remove this
         if "uuid" not in entry_dict:
             return quasilattice.database.calculate_canonical_entry_bytes_from_dict(
                 entry_dict
@@ -275,11 +345,11 @@ def get_entry_editor(entry_alias: str):
   html, body {
     margin: 0;
     padding: 0;
-    height: 100%;
   }
   textarea {
+    display: block;
     width: 100vw;
-    height: 100vh;
+    min-height: 100vh;
     border: none;
     outline: none;
     resize: none;
@@ -287,6 +357,7 @@ def get_entry_editor(entry_alias: str):
     padding: 16px;
     box-sizing: border-box;
     font-family: system-ui, sans-serif;
+    overflow: hidden;
   }
 </style>
 </head>
@@ -296,8 +367,7 @@ def get_entry_editor(entry_alias: str):
         output += """</textarea>
 
 <script>
-  // Change this to your target endpoint
-  const TARGET_URL = "/api/html/"""
+  const TARGET_URL = "/viewer/"""
         output += original_entry_alias
         output += """";
   const POST_URL = "/editor/"""
@@ -305,6 +375,14 @@ def get_entry_editor(entry_alias: str):
         output += """";
 
   const box = document.getElementById("box");
+
+  function autoResize() {
+    box.style.height = "auto";
+    box.style.height = box.scrollHeight + "px";
+  }
+
+  box.addEventListener("input", autoResize);
+  autoResize();
 
   box.addEventListener("keydown", async (e) => {
     if (e.key === "Enter" && e.shiftKey) {
@@ -320,11 +398,9 @@ def get_entry_editor(entry_alias: str):
 
         if (res.ok) {
           window.location.href = TARGET_URL;
-        } else {
-          window.location.href = TARGET_URL;
         }
       } catch (err) {
-        window.location.href = TARGET_URL;
+        console.log(err)
       }
     }
   });
@@ -384,20 +460,19 @@ def get_index(q: str | None = None):
     long_entry_aliases = [
         f'<li><a href="/{nh3.clean(alias)}">{nh3.clean(alias)}</a>&nbsp;<a href="/editor/{nh3.clean(alias)}">edit</a></li>'
         for alias in entry_aliases
-        if len(alias) <= quasilattice.current_default_alias_length
+        if len(alias) > quasilattice.current_default_alias_length
     ]
     short_entry_aliases = [
         f'<li><a href="/{nh3.clean(alias)}">{nh3.clean(alias)}</a>&nbsp;<a href="/editor/{nh3.clean(alias)}">edit</a></li>'
         for alias in entry_aliases
-        if len(alias) > quasilattice.current_default_alias_length
+        if len(alias) <= quasilattice.current_default_alias_length
     ]
     entry_uuids = [
-        f'<li><a href="/{uuid.hex()}">{uuid.hex()}</a>&nbsp;<a href="/editor/{uuid.hex()}">edit</a></li>'
-        for uuid in entry_uuids
+        f'<li><a href="/{uuid.UUID(bytes=uuid_bytes)!s}">{uuid.UUID(bytes=uuid_bytes)!s}</a>&nbsp;<a href="/editor/{uuid.UUID(bytes=uuid_bytes)!s}">edit</a></li>'
+        for uuid_bytes in entry_uuids
     ]
     entry_hashes = [
-        f'<li><a href="/{hash.hex()}">{hash.hex()}</a></li>'
-        for hash in entry_hashes
+        f'<li><a href="/{hash.hex()}">{hash.hex()}</a></li>' for hash in entry_hashes
     ]
     return f"""
     <html>
