@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quasilattice"
-version = "0.4.0"
+version = "0.4.1"
 authors = [
   { name="Kaedon Cleland-Host", email="kaedon@kaedon.net" },
 ]
@@ -21,6 +21,8 @@ dependencies = [
     "rfc8785",
     "zstandard",
     "pydantic",
+    "markdown-it-py",
+    "pwdlib[argon2]"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
