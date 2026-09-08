@@ -713,22 +713,20 @@ def file(file_id: uuid.UUID | str | bytes):
         elif isinstance(file_id, str):
             file_id = quasilattice.database.resolve_entry_alias(cursor, file_id)
         entry_dict = quasilattice.database.read_entry_by_id(cursor, file_id)
-        if entry_dict is None:
-            file_dir = os.path.join(
-                config["quasilattice"]["files_dir"], file_id.hex()[0:3]
-            )
-            with open(os.path.join(file_dir, file_id.hex() + ".file"), "r") as file_handle:
-                yield file_handle
-        if "file_hash" not in entry_dict or not isinstance(
-            entry_dict["file_hash"], str
-        ):
-            raise FileNotFoundError(f"Entry {file_id} not a file.")
-        else:
-            file_dir = os.path.join(
-                config["quasilattice"]["files_dir"], entry_dict["file_hash"][0:3]
-            )
-            with open(os.path.join(file_dir, entry_dict["file_hash"] + ".file"), "r") as file_handle:
-                yield file_handle
+    if entry_dict is None:
+        file_dir = os.path.join(config["quasilattice"]["files_dir"], file_id.hex()[0:3])
+        with open(os.path.join(file_dir, file_id.hex() + ".file"), "r") as file_handle:
+            yield file_handle
+    if "file_hash" not in entry_dict or not isinstance(entry_dict["file_hash"], str):
+        raise FileNotFoundError(f"Entry {file_id} not a file.")
+    else:
+        file_dir = os.path.join(
+            config["quasilattice"]["files_dir"], entry_dict["file_hash"][0:3]
+        )
+        with open(
+            os.path.join(file_dir, entry_dict["file_hash"] + ".file"), "r"
+        ) as file_handle:
+            yield file_handle
 
 
 def add_file(
@@ -754,12 +752,16 @@ def add_file(
         cursor = connection.cursor()
         if entry_id is None:
             entry_id = quasilattice.database.write_entry_dict(
+                cursor,
                 {
                     "is_file": True,
                     "file_hash": file_hash.hex(),
+                    "file_name": str(os.path.basename(path_to_file)),
                     "timestamp": time.time(),
                     "uuid": str(uuid.uuid4()),
-                }
+                },
+                edited_by,
+                api_key_id,
             )
         else:
             if not quasilattice.database.entry_exists(cursor, entry_id):
@@ -774,24 +776,34 @@ def add_file(
                 or not entry_dict["is_file"]
                 or "file_hash" not in entry_dict
                 or entry_dict["file_hash"] == file_hash.hex()
+                or "file_name" not in entry_dict
             ):
                 entry_dict["is_file"] = True
                 entry_dict["file_hash"] = file_hash.hex()
+                entry_dict["file_name"] = str(os.path.basename(path_to_file))
                 if "uuid" not in entry_dict:
                     entry_dict["uuid"] = str(uuid.uuid4())
                 if "timestamp" not in entry_dict:
                     entry_dict["timestamp"] = time.time()
                 entry_id = quasilattice.database.write_entry_dict(
-                    entry_dict, edited_by, api_key_id
+                    cursor, entry_dict, edited_by, api_key_id
                 )
         if config["quasilattice"]["generate_default_aliases"]:
-            if len(entry_id) == 16:
-                quasilattice.database.write_default_alias_by_uuid(
-                    cursor, entry_id, edited_by, api_key_id
-                )
-            elif len(entry_id) == 32:
-                quasilattice.database.write_default_alias_by_hash(
-                    cursor, entry_id, edited_by, api_key_id
+            quasilattice.database.write_default_alias_by_uuid(
+                cursor, entry_id, edited_by, api_key_id
+            )
+            alias_row = quasilattice.database.read_alias_row(
+                cursor, str(os.path.basename(path_to_file))
+            )
+            if alias_row is None or (
+                alias_row["entry_uuid"] is None and alias_row["entry_hash"] is None
+            ):
+                quasilattice.database.add_alias_by_uuid(
+                    cursor,
+                    entry_id,
+                    str(os.path.basename(path_to_file)),
+                    edited_by,
+                    api_key_id,
                 )
         if as_reference:
             quasilattice.database.reference_file(cursor, file_hash, path_to_file, False)

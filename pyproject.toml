@@ -20,6 +20,7 @@ dependencies = [
     "pypandoc",
     "rfc8785",
     "zstandard",
+    "pydantic",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

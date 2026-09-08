@@ -1,5 +1,7 @@
+from __future__ import annotations
 import html
 import sqlite3
+import typing
 
 import markdown_it
 import nh3
@@ -26,14 +28,15 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
                 entry_dict
             ).decode("utf-8")
         )
-    
+
     # plain text
-    if ("markup" not in entry_dict or 
-        not isinstance(entry_dict["markup"], str) or 
-        entry_dict["markup"].lower() == "plain" or 
-        entry_dict["markup"].lower() == "text" or 
-        entry_dict["markup"].lower() == "txt" or 
-        entry_dict["markup"].lower() == ""
+    if (
+        "markup" not in entry_dict
+        or not isinstance(entry_dict["markup"], str)
+        or entry_dict["markup"].lower() == "plain"
+        or entry_dict["markup"].lower() == "text"
+        or entry_dict["markup"].lower() == "txt"
+        or entry_dict["markup"].lower() == ""
     ):
         return html.escape(entry_dict["content"])
 
@@ -42,12 +45,13 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
         return nh3.clean(entry_dict["content"])
 
     # markdown
-    if (entry_dict["markup"].lower() == "markdown" or
-        entry_dict["markup"].lower() == "md" or
-        entry_dict["markup"].lower() in MARKDOWN_FLAVORS or
-        "github" in entry_dict["markup"].lower()
+    if (
+        entry_dict["markup"].lower() == "markdown"
+        or entry_dict["markup"].lower() == "md"
+        or entry_dict["markup"].lower() in MARKDOWN_FLAVORS
+        or "github" in entry_dict["markup"].lower()
     ):
-        return render_entry_markdown_to_html(entry_dict)
+        return render_entry_markdown_to_html(cursor, entry_dict)
 
     # TODO: add micron support (maybe use: https://github.com/JamesM92/micron2html)
 
@@ -62,7 +66,7 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
 
 def render_entry_markdown_to_html(cursor: sqlite3.Cursor, entry_dict: dict):
     md = markdown_it.MarkdownIt().use(markdown_embed_plugin)
-    md.renderer.rules["embed"] = markdown_embed_renderer(md)
+    md.renderer.rules["embed"] = markdown_embed_renderer(md, cursor)
 
     html_str = md.render(entry_dict["content"])
     html_str = nh3.clean(html_str)
@@ -198,18 +202,24 @@ def markdown_extract_section(src: str, heading: str) -> str:
     return "\n".join(output)
 
 
-def markdown_embed_renderer(md: markdown_it.MarkdownIt, max_depth: int = 6):
+def markdown_embed_renderer(
+    md: markdown_it.MarkdownIt, cursor: sqlite3.Cursor, max_depth: int = 6
+):
     stack: list[str] = []
 
-    def render_embed(self, tokens, idx: int, options, env):
+    def render_embed(tokens, idx: int, options, env):
         meta = tokens[idx].meta
-        target, heading, alias = meta["target"], meta["heading"], meta["alias"]
+        target, heading, _alias = meta["target"], meta["heading"], meta["alias"]
 
-        entry_id = bytes("4572835")# TODO: load uuid, hash or None
+        entry_id = quasilattice.database.resolve_entry_alias(cursor, target)
         if entry_id is None or entry_id in stack or len(stack) >= max_depth:
             return f"[[{html.escape(target)}]]"
 
-        content = "CONTENT"  # quasilattice.database.read_entry_content_by_uuid(entry_uuid) # TODO: implement
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_id)
+        if entry_dict is not None and "content" in entry_dict:
+            content = entry_dict["content"]
+        else:
+            return f"[[{html.escape(target)}]]"
         if heading:
             content = markdown_extract_section(content, heading)
 

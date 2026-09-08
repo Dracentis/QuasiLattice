@@ -25,6 +25,7 @@ ENTRY_COLUMNS = {
     "edited_by": str,
     "is_file": bool,
     "file_hash": bytes,
+    "file_name": str,
     "markup_language": str,
     "title": str,
     "content": str,
@@ -133,6 +134,7 @@ def validate_database(db_path=None):
                         edited_by TEXT,
                         is_file INTEGER,
                         file_hash BLOB,
+                        file_name TEXT,
                         markup_language TEXT,
                         title TEXT,
                         content TEXT,
@@ -1072,7 +1074,7 @@ def read_entry_uuids(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
         (limit,),
     )
     rows = cursor.fetchall()
-    return [row["uuid"] for row in rows]
+    return [row["uuid"] for row in rows if row["uuid"] is not None]
 
 
 def read_entry_hashes(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
@@ -1085,7 +1087,7 @@ def read_entry_hashes(cursor: sqlite3.Cursor, limit: int = 500) -> list[bytes]:
         (limit,),
     )
     rows = cursor.fetchall()
-    return [row["hash"] for row in rows]
+    return [row["hash"] for row in rows if row["hash"] is not None]
 
 
 def read_entry_hash(cursor: sqlite3.Cursor, entry_uuid: bytes) -> bytes | None:
@@ -1485,16 +1487,12 @@ def read_entries_by_filter(
         )
     }
 
-
-def read_entry_rows_by_filter(
+def read_entry_hashes_by_filter(
     cursor: sqlite3.Cursor,
     filter: str,
     limit: int = 500,
     include_outdated: bool = False,
-    include_deleted: bool = False,
-    order_by_hash: bool = False,
 ) -> list[sqlite3.Row]:
-    """Returns a list of all (not deleted and not outdated) entry rows that match the filter. Filters are written as a comma separated list with the format: property.path__op=value,"""
     conditions = _parse_entry_filter(filter)
     if include_outdated:
         sql_command = (
@@ -1561,7 +1559,18 @@ def read_entry_rows_by_filter(
     logger.debug("with parameters: " + str(parameters))
 
     cursor.execute(sql_command, parameters)
-    entry_hashes = [row["entry_hash"] for row in cursor.fetchall()]
+    return [row["entry_hash"] for row in cursor.fetchall()]
+
+def read_entry_rows_by_filter(
+    cursor: sqlite3.Cursor,
+    filter: str,
+    limit: int = 500,
+    include_outdated: bool = False,
+    include_deleted: bool = False,
+    order_by_hash: bool = False,
+) -> list[sqlite3.Row]:
+    """Returns a list of all (not deleted and not outdated) entry rows that match the filter. Filters are written as a comma separated list with the format: property.path__op=value,"""
+    entry_hashes = read_entry_hashes_by_filter(cursor,filter,limit,include_outdated)
     return read_entry_rows_by_hash(
         cursor, entry_hashes, limit, include_deleted, order_by_hash
     )
@@ -1622,7 +1631,6 @@ def write_entry_dict(
         and "archive_mode" in quasilattice.config["quasilattice"]
         and not quasilattice.config["quasilattice"]["archive_mode"]
     ):
-        print("PASSED!")
         # delete old versions of entry
         entry_version_hashes = read_entry_version_hashes(cursor, entry_uuid)
         if len(entry_version_hashes) > 0:
@@ -1641,7 +1649,7 @@ def write_entry_dict(
 
     # write to entries
     cursor.execute(
-        "INSERT OR REPLACE INTO entries VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ",
+        "INSERT OR REPLACE INTO entries VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ",
         entry_tuple,
     )
 
@@ -1911,6 +1919,8 @@ def convert_entry_row_to_dict(entry_row: sqlite3.Row) -> dict:
         entry_dict["is_file"] = bool(entry_row["is_file"] == 1)
     if entry_row["file_hash"] is not None:
         entry_dict["file_hash"] = bytes(entry_row["file_hash"]).hex()
+    if entry_row["file_name"] is not None:
+        entry_dict["file_name"] = entry_row["file_name"]
     if entry_row["markup_language"] is not None:
         entry_dict["markup_language"] = entry_row["markup_language"]
     if entry_row["title"] is not None:
@@ -1963,6 +1973,7 @@ def convert_entry_dict_to_tuple(entry_dict: dict) -> tuple:
         _get_column_property(entry_dict, "edited_by"),
         _get_column_property(entry_dict, "is_file"),
         _get_column_property(entry_dict, "file_hash"),
+        _get_column_property(entry_dict, "file_name"),
         _get_column_property(entry_dict, "markup_language"),
         _get_column_property(entry_dict, "title"),
         _get_column_property(entry_dict, "content"),
@@ -2260,9 +2271,9 @@ def read_alias_row(cursor: sqlite3.Cursor, alias: str) -> sqlite3.Row | None:
 def resolve_entry_alias(cursor: sqlite3.Cursor, entry_alias: str) -> bytes:
     alias_row = read_alias_row(cursor, entry_alias)
     if alias_row is not None and alias_row["entry_uuid"] is not None:
-        entry_alias = bytes(alias_row["entry_uuid"])
+        return bytes(alias_row["entry_uuid"])
     elif alias_row is not None and alias_row["entry_hash"] is not None:
-        entry_alias = bytes(alias_row["entry_hash"])
+        return bytes(alias_row["entry_hash"])
     else:
         try:
             return bytes.fromhex(
@@ -2361,7 +2372,7 @@ def read_aliases_before_time(
     rows = cursor.fetchall()
     output = []
     for row in rows:
-        if row["entry_uuid"] is not None and row["entry_hash"] is not None:
+        if row["entry_uuid"] is not None or row["entry_hash"] is not None:
             output.append(row["alias"])
     return output
 
