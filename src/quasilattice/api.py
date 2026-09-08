@@ -287,7 +287,7 @@ def post_entry_json(entry_alias: str, response: EditorResponse):
             if quasilattice.config["quasilattice"]["generate_default_aliases"]:
                 quasilattice.database.write_default_alias_by_uuid(
                     cursor,
-                    bytes.fromhex(entry_dict["uuid"]),
+                    uuid.UUID(entry_dict["uuid"]).bytes,
                     "http_user",
                 )
 
@@ -307,7 +307,7 @@ def post_entry_json(entry_alias: str, response: EditorResponse):
                 ):
                     quasilattice.database.add_alias_by_uuid(
                         cursor,
-                        bytes.fromhex(entry_dict["uuid"]),
+                        uuid.UUID(entry_dict["uuid"]).bytes,
                         original_entry_alias,
                         "http_user",
                     )

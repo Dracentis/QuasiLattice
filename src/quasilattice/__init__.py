@@ -1,4 +1,4 @@
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 from . import quasilattice as _quasilattice
 from .quasilattice import *
