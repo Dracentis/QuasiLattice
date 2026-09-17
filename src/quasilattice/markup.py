@@ -1,5 +1,8 @@
 from __future__ import annotations
+
+import copy
 import html
+import logging
 import sqlite3
 import typing
 
@@ -12,6 +15,104 @@ import quasilattice.database
 
 MARKDOWN_FLAVORS = ["commonmark", "pandoc", "gfm"]
 
+ALLOWED_TAGS = nh3.ALLOWED_TAGS | {
+    "div",
+    "span",
+    "p",
+    "br",
+    "hr",
+    "blockquote",
+    "pre",
+    "code",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "th",
+    "td",
+    "sup",
+    "sub",
+}
+
+ALLOWED_ATTRIBUTES = copy.deepcopy(nh3.ALLOWED_ATTRIBUTES)
+for tag in (
+    "div",
+    "span",
+    "p",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "td",
+    "th",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "u",
+    "code",
+    "pre",
+):
+    ALLOWED_ATTRIBUTES.setdefault(tag, set()).add("style")
+for tag in ALLOWED_ATTRIBUTES:
+    ALLOWED_ATTRIBUTES.setdefault(tag, set()).add("style")
+
+ALLOWED_STYLE_PROPERTIES = {
+    "color",
+    "background-color",
+    "font-family",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "text-decoration",
+    "text-align",
+    "line-height",
+    "letter-spacing",
+    "margin",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "padding",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "border",
+    "border-width",
+    "border-style",
+    "border-color",
+    "border-radius",
+    "width",
+    "max-width",
+    "min-width",
+    "height",
+    "max-height",
+    "min-height",
+    "vertical-align",
+    "white-space",
+    "word-break",
+    "overflow-wrap",
+    "list-style",
+    "list-style-type",
+}
+
+logger = logging.getLogger("quasilattice")
+
+cleaner = nh3.Cleaner(
+    tags=ALLOWED_TAGS,
+    attributes=ALLOWED_ATTRIBUTES,
+    filter_style_properties=ALLOWED_STYLE_PROPERTIES,
+    url_schemes=nh3.ALLOWED_URL_SCHEMES,
+    link_rel="noopener noreferrer",
+    strip_comments=False,
+)
+
 
 def render_entry(cursor: sqlite3.Cursor, entry_dict: dict, target_markup: str = "html"):
     if target_markup.lower() == "html":
@@ -23,7 +124,7 @@ def render_entry(cursor: sqlite3.Cursor, entry_dict: dict, target_markup: str = 
 
 def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
     if "content" not in entry_dict or not isinstance(entry_dict["content"], str):
-        return nh3.clean(
+        return cleaner.clean(
             quasilattice.database.calculate_canonical_entry_bytes_from_dict(
                 entry_dict
             ).decode("utf-8")
@@ -42,7 +143,7 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
 
     # html
     if entry_dict["markup_language"].lower() == "html":
-        return nh3.clean(entry_dict["content"])
+        return cleaner.clean(entry_dict["content"])
 
     # markdown
     if (
@@ -69,7 +170,7 @@ def render_entry_markdown_to_html(cursor: sqlite3.Cursor, entry_dict: dict):
     md.renderer.rules["embed"] = markdown_embed_renderer(md, cursor)
 
     html_str = md.render(entry_dict["content"])
-    html_str = nh3.clean(html_str)
+    html_str = cleaner.clean(html_str)
     return html_str
 
 

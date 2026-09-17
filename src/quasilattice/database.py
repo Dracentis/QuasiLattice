@@ -17,8 +17,6 @@ import zstandard
 
 import quasilattice
 
-logger = logging.getLogger("quasilattice")
-
 ENTRY_COLUMNS = {
     "uuid": uuid.UUID,
     "timestamp": float,
@@ -30,6 +28,8 @@ ENTRY_COLUMNS = {
     "title": str,
     "content": str,
 }
+
+logger = logging.getLogger("quasilattice")
 
 
 def validate_database(db_path=None):
@@ -251,6 +251,17 @@ def validate_database(db_path=None):
                 sql_cursor.execute(
                     "CREATE INDEX index_write_access_timestamp ON write_access(timestamp)"
                 )
+
+            # create small_files table
+            sql_cursor.execute(
+                """SELECT name FROM sqlite_master WHERE type='table' AND name='small_files';"""
+            )
+            if sql_cursor.fetchone() == None:
+                sql_cursor.execute("""
+                    CREATE TABLE small_files (
+                        file_hash BLOB PRIMARY KEY NOT NULL,
+                        data BLOB
+                    )""")
 
             # create referenced_files table
             sql_cursor.execute(
@@ -1437,10 +1448,12 @@ def read_entries_before_hash(
 
 
 def entry_exists(
-    cursor: sqlite3.Cursor, entry_id: uuid.UUID | str | bytes, include_deleted: bool = False
+    cursor: sqlite3.Cursor,
+    entry_id: uuid.UUID | str | bytes,
+    include_deleted: bool = False,
 ) -> bool:
     if isinstance(entry_id, uuid.UUID):
-            entry_id = entry_id.bytes
+        entry_id = entry_id.bytes
     elif isinstance(entry_id, str):
         entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_id)
     cursor.execute(
@@ -1486,6 +1499,7 @@ def read_entries_by_filter(
             include_deleted,
         )
     }
+
 
 def read_entry_hashes_by_filter(
     cursor: sqlite3.Cursor,
@@ -1561,6 +1575,7 @@ def read_entry_hashes_by_filter(
     cursor.execute(sql_command, parameters)
     return [row["entry_hash"] for row in cursor.fetchall()]
 
+
 def read_entry_rows_by_filter(
     cursor: sqlite3.Cursor,
     filter: str,
@@ -1570,7 +1585,7 @@ def read_entry_rows_by_filter(
     order_by_hash: bool = False,
 ) -> list[sqlite3.Row]:
     """Returns a list of all (not deleted and not outdated) entry rows that match the filter. Filters are written as a comma separated list with the format: property.path__op=value,"""
-    entry_hashes = read_entry_hashes_by_filter(cursor,filter,limit,include_outdated)
+    entry_hashes = read_entry_hashes_by_filter(cursor, filter, limit, include_outdated)
     return read_entry_rows_by_hash(
         cursor, entry_hashes, limit, include_deleted, order_by_hash
     )
@@ -3797,6 +3812,12 @@ def _delete_outdated_write_access_if_not_in_archive_mode(cursor: sqlite3.Cursor)
 
 # endregion
 
+# region small_files
+
+# TODO: implement small_files
+
+# endregion
+
 
 # region referenced_files
 def referenced_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
@@ -3828,13 +3849,15 @@ def referenced_file(cursor: sqlite3.Cursor, file_hash: bytes) -> str | None:
         except OSError:
             return None  # failed to calculate hash
         if sha256.digest() == file_hash:
-            reference_file(cursor, file_hash, file_path, False) # update reference
+            reference_file(cursor, file_hash, file_path, False)  # update reference
         else:
             return None  # hash doesn't match
     return file_path
 
 
-def reference_file(cursor: sqlite3.Cursor, file_hash: bytes, path_to_file: str, verify: bool = True) -> bool:
+def reference_file(
+    cursor: sqlite3.Cursor, file_hash: bytes, path_to_file: str, verify: bool = True
+) -> bool:
     path_to_file = os.path.abspath(path_to_file)
 
     if not os.path.isfile(path_to_file):

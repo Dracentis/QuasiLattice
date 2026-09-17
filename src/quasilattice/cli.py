@@ -26,6 +26,9 @@ def _subprocess_run_logged(cmd, check=False, **kwargs):
         )
     return result
 
+def version(args):
+    logger.info(f"QuasiLattice Version: {quasilattice.__version__}")
+    return quasilattice.__version__
 
 def run(args):
     """
@@ -155,7 +158,11 @@ def status(args):
     )
     logger.debug("CLI: quasilattice " + str(" ".join(sys.argv[1:])))
     system = platform.system()
-    logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
+    if args.version:
+        logger.info(f"QuasiLattice Version: {quasilattice.__version__}")
+        return quasilattice.__version__
+    else:
+        logger.debug(f"QuasiLattice Version: {quasilattice.__version__}")
     logger.debug(f"Operating System: {system}")
     if system == "Linux":
         if shutil.which("systemctl") is not None:
@@ -727,6 +734,12 @@ def main():
         help="Provide debug logging. Equivalent to --log-level 5",
     )
     parser.add_argument(
+        "-v",
+        "--version",
+        action="store_true",
+        help="Print QuasiLattice version.",
+    )
+    parser.add_argument(
         "-l",
         "--log-level",
         type=int,
@@ -757,6 +770,11 @@ def main():
     run_subparser.add_argument(
         "--config_path", type=str, help="Path to the config file."
     )
+
+    version_subparser: argparse.ArgumentParser = subparsers.add_parser(
+        "version", help="Print QuasiLattice version."
+    )
+    version_subparser.set_defaults(func=version)
 
     service_commands = {
         "setup": setup,

@@ -12,6 +12,7 @@ import uuid
 import fastapi
 import fastapi.responses
 import fastapi.security
+import fastapi.templating
 import jwt
 import nh3
 import pwdlib
@@ -21,14 +22,13 @@ import quasilattice
 import quasilattice.database
 import quasilattice.markup
 
-logger = logging.getLogger("quasilattice")
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# code for generating uuids:
-# random_uuid = uuid.uuid4() # generate a random uuid
-# random_uuid_str = str(random_uuid) # as str
-# random_uuid_bytes = random_uuid.bytes
-# entry_uuid = uuid.UUID(random_uuid_str) # from str
-# entry_uuid = uuid.UUID(bytes=random_uuid_bytes) # from bytes
+_KATEX_DIR = os.path.join(_PACKAGE_DIR, "katex")
+
+_TEMPLATE_DIR = os.path.join(_PACKAGE_DIR, "templates")
+
+logger = logging.getLogger("quasilattice")
 
 password_hash = pwdlib.PasswordHash.recommended()
 oauth2_scheme = fastapi.security.OAuth2PasswordBearer(
@@ -38,11 +38,7 @@ oauth2_scheme = fastapi.security.OAuth2PasswordBearer(
 
 app = fastapi.FastAPI()
 
-_PBKDF2_ITERATIONS = 400000
-
-
-class EditorResponse(pydantic.BaseModel):
-    content: str
+templates = fastapi.templating.Jinja2Templates(directory=_TEMPLATE_DIR)
 
 
 def verify_password_hash(password: str, hashed_password: str) -> bool:
@@ -59,6 +55,11 @@ def generate_api_key_hash(api_key: str) -> str:
 
 def verify_api_key_hash(api_key: str, hashed_api_key: str) -> bool:
     return secrets.compare_digest(generate_api_key_hash(api_key), hashed_api_key)
+
+
+def _is_full_html_document(markup: str) -> bool:
+    prefix = markup.lstrip().lstrip("\ufeff")[:512].lower()
+    return prefix.startswith(("<!doctype html", "<html"))
 
 
 # TODO: login()
@@ -100,8 +101,8 @@ def get_api_keys():
     # }
 
 
-@app.get("/api/access/{entry_alias}")
-def get_access():
+@app.get("/api/access/{entry_alias:path}")
+def get_access(entry_alias: str):
     """Returns a dictionary of read_access and write_access for one or more entries.
 
     Example for one entry:
@@ -143,8 +144,8 @@ def get_access():
     return "TODO: Implement get access"
 
 
-@app.get("/api/read_access/{entry_alias}")
-def get_read_access():
+@app.get("/api/read_access/{entry_alias:path}")
+def get_read_access(entry_alias: str):
     """Returns a dictionary of read_access for one or more entries.
 
     Example for one entry:
@@ -168,8 +169,8 @@ def get_read_access():
     return "TODO: Implement get read_access"
 
 
-@app.get("/api/write_access/{entry_alias}")
-def get_write_access():
+@app.get("/api/write_access/{entry_alias:path}")
+def get_write_access(entry_alias: str):
     """Returns a dictionary of write_access for one or more entries.
 
     Example for one entry:
@@ -193,224 +194,26 @@ def get_write_access():
     return "TODO: Implement get write_access"
 
 
-@app.get("/api/html/{entry_alias}")
-def get_entry_html(entry_alias: str, q: str | None = None):
+@app.get("/api/html/{entry_alias:path}")
+def get_entry_html(request: fastapi.Request, entry_alias: str, q: str | None = None):
     """Returns the rendered html of an entry. Renders the markup_language specified by the entry to html."""
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_id)
         if entry_dict is None:
             raise fastapi.HTTPException(status_code=404, detail="Entry not found")
-        return fastapi.responses.HTMLResponse(
-            quasilattice.markup.render_entry_to_html(cursor, entry_dict)
+        return templates.TemplateResponse(
+            request=request,
+            name="viewer.html",
+            context={
+                "title": entry_dict.get("title", entry_alias),
+                "body": quasilattice.markup.render_entry_to_html(cursor, entry_dict),
+            },
         )
 
 
-@app.get("/api/markup/{entry_alias}")
-def get_entry_markup_content(entry_alias: str, q: str | None = None):
-    """Returns the original markup content of an entry."""
-    with quasilattice.database.connection() as connection:
-        cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
-        if entry_dict is None:
-            raise fastapi.HTTPException(status_code=404, detail="Entry not found")
-        if "content" not in entry_dict or not isinstance(entry_dict["content"], str):
-            return quasilattice.database.calculate_canonical_entry_bytes_from_dict(
-                entry_dict
-            ).decode("utf-8")
-        return fastapi.responses.HTMLResponse(html.escape(entry_dict["content"]))
-
-
-@app.get("/viewer/{entry_alias}")
-def get_entry_viewer(entry_alias: str):
-    """Returns the rendered html of an entry, with a shortcut to return to the editor. Renders the markup_language specified by the entry to html."""
-    original_entry_alias = entry_alias
-    with quasilattice.database.connection() as connection:
-        cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
-        if entry_dict is None:
-            raise fastapi.HTTPException(status_code=404, detail="Entry not found")
-        return fastapi.responses.HTMLResponse(
-            quasilattice.markup.render_entry_to_html(cursor, entry_dict)
-            + """<script>
-  const TARGET_URL = "/editor/"""
-            + original_entry_alias
-            + """";
-  document.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter" && e.shiftKey) {
-      e.preventDefault();
-      window.location.href = TARGET_URL;
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      window.location.href = "/";
-    }
-  });
-</script>"""
-        )
-
-
-@app.post("/editor/{entry_alias}")  # these should be considered temporary
-def post_entry_json(entry_alias: str, response: EditorResponse):
-    """Write content to an entry."""
-    original_entry_alias = entry_alias
-    with quasilattice.database.connection() as connection:
-        cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
-        if entry_dict is None:
-            entry_dict = {
-                "title": original_entry_alias,
-                "is_file": False,
-                "markup_language": "markdown",
-                "uuid": str(uuid.uuid4()),
-            }
-        if "content" not in entry_dict or (entry_dict["content"] != response.content):
-            entry_dict["content"] = response.content
-            entry_dict["timestamp"] = time.time()
-            quasilattice.database.write_entry_dict(cursor, entry_dict, "http_user")
-            if quasilattice.config["quasilattice"]["generate_default_aliases"]:
-                quasilattice.database.write_default_alias_by_uuid(
-                    cursor,
-                    uuid.UUID(entry_dict["uuid"]).bytes,
-                    "http_user",
-                )
-
-            # add an alias to this title is it doesn't exist (ignoring UUIDs and hashes)
-            try:
-                original_entry_alias_bytes = bytes.fromhex(
-                    "".join(c for c in entry_alias if c in "0123456789abcdefABCDEF")
-                )
-            except (TypeError, ValueError):
-                original_entry_alias_bytes = b""
-            if len(original_entry_alias_bytes) not in [16, 32]:
-                alias_row = quasilattice.database.read_alias_row(
-                    cursor, original_entry_alias
-                )
-                if alias_row is None or (
-                    alias_row["entry_uuid"] is None and alias_row["entry_hash"] is None
-                ):
-                    quasilattice.database.add_alias_by_uuid(
-                        cursor,
-                        uuid.UUID(entry_dict["uuid"]).bytes,
-                        original_entry_alias,
-                        "http_user",
-                    )
-            connection.commit()
-    return 200
-
-
-@app.get("/editor/{entry_alias}")  # these should be considered temporary
-def get_entry_editor(entry_alias: str):
-    original_entry_alias = entry_alias
-    with quasilattice.database.connection() as connection:
-        cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
-        if entry_dict is None:
-            entry_dict = {"content": "", "uuid": ""}  # Stupid hack, TODO: remove this
-        if "uuid" not in entry_dict:
-            return quasilattice.database.calculate_canonical_entry_bytes_from_dict(
-                entry_dict
-            ).decode("utf-8")
-        if "content" not in entry_dict or not isinstance(entry_dict["content"], str):
-            entry_dict["content"] = ""
-
-        output = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>"""
-        output += original_entry_alias
-        output += """</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-  }
-  textarea {
-    display: block;
-    width: 100vw;
-    min-height: 100vh;
-    border: none;
-    outline: none;
-    resize: none;
-    font-size: 16px;
-    padding: 16px;
-    box-sizing: border-box;
-    font-family: system-ui, sans-serif;
-    overflow: hidden;
-  }
-</style>
-</head>
-<body>
-<textarea id="box" placeholder="Type here… Shift+Enter to save changes" autofocus>"""
-        output += html.escape(entry_dict["content"])
-        output += """</textarea>
-
-<script>
-  const TARGET_URL = "/viewer/"""
-        output += original_entry_alias
-        output += """";
-  const POST_URL = "/editor/"""
-        output += original_entry_alias
-        output += """";
-
-  const box = document.getElementById("box");
-
-  function autoResize() {
-    box.style.height = "auto";
-    box.style.height = box.scrollHeight + "px";
-  }
-
-  box.addEventListener("input", autoResize);
-  autoResize();
-
-  box.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter" && e.shiftKey) {
-      e.preventDefault();
-      const content = box.value;
-
-      try {
-        const res = await fetch(POST_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content })
-        });
-
-        if (res.ok) {
-          window.location.href = TARGET_URL;
-        }
-      } catch (err) {
-        console.log(err)
-      }
-    }
-  });
-</script>
-</body>
-</html>"""
-        return fastapi.responses.HTMLResponse(output)
-
-
-@app.get("/api/json/{entry_alias}")
+@app.get("/api/json/{entry_alias:path}")
 def get_entry_json(entry_alias: str, q: str | None = None):
     """Returns the canonical json for one or more entries."""
     with quasilattice.database.connection() as connection:
@@ -419,10 +222,13 @@ def get_entry_json(entry_alias: str, q: str | None = None):
             entry_alias = entry_alias.bytes
         elif isinstance(entry_alias, str):
             entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        return quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        if entry_dict is None:
+            raise fastapi.HTTPException(status_code=404, detail="Entry not found.")
+        return entry_dict
 
 
-@app.get("/api/hash/{entry_alias}")
+@app.get("/api/hash/{entry_alias:path}")
 def get_entry_hash(entry_alias: str, q: str | None = None):
     """Returns the hash of one or more entries in hexidecimal.
 
@@ -506,30 +312,51 @@ def get_index(q: str | None = None):
     """
 
 
-@app.get("/{entry_alias}")
-def get_entry(entry_alias: str):
+@app.get("/katex/katex.min.js")
+async def katex_js():
+    return fastapi.responses.FileResponse(os.path.join(_KATEX_DIR, "katex.min.js"))
+
+
+@app.get("/katex/katex.min.css")
+async def katex_css():
+    return fastapi.responses.FileResponse(os.path.join(_KATEX_DIR, "katex.min.css"))
+
+
+@app.get("/katex/contrib/auto-render.min.js")
+async def katex_auto_render():
+    return fastapi.responses.FileResponse(
+        os.path.join(_KATEX_DIR, "contrib", "auto-render.min.js")
+    )
+
+
+@app.get("/{entry_alias:path}")
+def get_entry(request: fastapi.Request, entry_alias: str):
     """Returns the rendered html of an entry or the raw file contents if is_file is true."""
     with quasilattice.database.connection() as connection:
         cursor = connection.cursor()
-        if isinstance(entry_alias, uuid.UUID):
-            entry_alias = entry_alias.bytes
-        elif isinstance(entry_alias, str):
-            entry_alias = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
-        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_alias)
+        entry_id = quasilattice.database.resolve_entry_alias(cursor, entry_alias)
+        entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_id)
         if entry_dict is None:
             file_dir = os.path.join(
-                quasilattice.config["quasilattice"]["files_dir"], entry_alias.hex()[0:3]
+                quasilattice.config["quasilattice"]["files_dir"], entry_id.hex()[0:3]
             )
-            file_path = os.path.join(file_dir, entry_alias.hex() + ".file")
-            if os.path.isfile(file_path):
+            file_path = os.path.join(file_dir, entry_id.hex() + ".file")
+            if os.path.isfile(file_path):  # TODO: check access
                 return fastapi.responses.FileResponse(file_path)
             else:
                 raise fastapi.HTTPException(status_code=404, detail="Entry not found")
         if "file_hash" not in entry_dict or not isinstance(
             entry_dict["file_hash"], str
         ):
-            return fastapi.responses.HTMLResponse(
-                quasilattice.markup.render_entry_to_html(cursor, entry_dict)
+            return templates.TemplateResponse(
+                request=request,
+                name="viewer.html",
+                context={
+                    "title": entry_dict.get("title", entry_alias),
+                    "body": quasilattice.markup.render_entry_to_html(
+                        cursor, entry_dict
+                    ),
+                },
             )
         else:
             file_dir = os.path.join(
@@ -557,7 +384,15 @@ def quasilattice_openapi():
         title="QuasiLattice",
         version=quasilattice.__version__,
         summary="A data analysis, knowledge base, journaling and note taking system.",
-        description="QuasiLattice (or Lattice for short) is a data analysis, knowledge base, journaling and note taking system built on a simple RESTful API.",
+        description="""QuasiLattice (or Lattice for short) is a data analysis, knowledge base, journaling and note taking system built on a simple specification. This repository will contain a reference implementation written in Python, but it should be possible to build compatible QuasiLattice nodes in other languages or protocols other than HTTP.
+
+QuasiLattice organizes data into "entries". Any file or JSON object is a valid QuasiLattice entry. Entries can contain a “content” string written in any markup language, which will be dynamically rendered when viewed.
+
+Each QuasiLattice node maintains a list of entries and controls who has access to read and write to that list of entries.
+
+Nodes can be configured to sync data with other nodes. This allows anybody to archive data from other QuasiLattice nodes. In protocols that support it, these mirrors provide bandwidth to reduce to load on the original source node and if the original source node fails then the data is still accessible. Every entry is canonically stored according to the JSON [RFC8785] subset, so hashes of entries can be compared between nodes.
+
+QuasiLattice can also be configured in "archive_mode", where all changes to the entries are timestamped and nothing is deleted. In this mode, QuasiLattice can be used as an archival lab notebook for experimental research. Hashes of these entries could be proactively published online, cryptographically proving the timeline of scholarly work to third parties.""",
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema

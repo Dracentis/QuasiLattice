@@ -16,15 +16,15 @@ import tomllib
 
 import quasilattice.database
 
+logger = logging.getLogger("quasilattice")
+
 config = {}
-config_path = os.path.expanduser("~/.quasilattice/config.toml")
+config_path = os.path.join(os.path.expanduser("~"), ".quasilattice", "config.toml")
 
 current_default_alias_length = 1
 
 sync_thread = None
 last_sync_time = time.time()
-
-logger = logging.getLogger("quasilattice")
 
 
 class _LogFormatter(logging.Formatter):
@@ -66,16 +66,16 @@ def init(
     config_override: dict[str, typing.Any] | None = None,
 ):
     if config_path is None:
-        if os.path.isdir("/etc/quasilattice") and os.path.isfile(
-            "/etc/quasilattice/config.toml"
+        if os.path.join("etc","quasilattice") and os.path.isfile(
+            os.path.join("etc","quasilattice","config.toml")
         ):
-            config_path = "/etc/quasilattice/config.toml"
+            config_path = os.path.join("etc","quasilattice","config.toml")
         elif os.path.isdir(
-            os.path.expanduser("~/.config/quasilattice")
-        ) and os.path.isfile(os.path.expanduser("~/.config/quasilattice/config.toml")):
-            config_path = os.path.expanduser("~/.config/quasilattice/config.toml")
+            os.path.join(os.path.expanduser("~"), ".config", "quasilattice")
+        ) and os.path.isfile(os.path.join(os.path.expanduser("~"), ".config", "quasilattice", "config.toml")):
+            config_path = os.path.join(os.path.expanduser("~"), ".config", "quasilattice", "config.toml")
         else:
-            config_path = os.path.expanduser("~/.quasilattice/config.toml")
+            config_path = os.path.join(os.path.expanduser("~"), ".quasilattice", "config.toml")
     sys.modules[__name__].config_path = config_path
 
     # load config

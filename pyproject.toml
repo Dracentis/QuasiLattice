@@ -22,7 +22,8 @@ dependencies = [
     "zstandard",
     "pydantic",
     "markdown-it-py",
-    "pwdlib[argon2]"
+    "pwdlib[argon2]",
+    "jinja2",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -37,6 +38,9 @@ Issues = "https://github.com/Dracentis/QuasiLattice/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quasilattice"]
+include = [
+    "src/quasilattice/templates/**/*.html",
+]
 
 [project.scripts]
 quasilattice = "quasilattice.cli:main"
