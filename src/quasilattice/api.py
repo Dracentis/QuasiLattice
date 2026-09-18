@@ -28,6 +28,8 @@ _KATEX_DIR = os.path.join(_PACKAGE_DIR, "katex")
 
 _TEMPLATE_DIR = os.path.join(_PACKAGE_DIR, "templates")
 
+_CSS_DIR = os.path.join(_PACKAGE_DIR, "css")
+
 logger = logging.getLogger("quasilattice")
 
 password_hash = pwdlib.PasswordHash.recommended()
@@ -203,14 +205,18 @@ def get_entry_html(request: fastapi.Request, entry_alias: str, q: str | None = N
         entry_dict = quasilattice.database.read_entry_by_id(cursor, entry_id)
         if entry_dict is None:
             raise fastapi.HTTPException(status_code=404, detail="Entry not found")
-        return templates.TemplateResponse(
-            request=request,
-            name="viewer.html",
-            context={
-                "title": entry_dict.get("title", entry_alias),
-                "body": quasilattice.markup.render_entry_to_html(cursor, entry_dict),
-            },
-        )
+        entry_html = quasilattice.markup.render_entry_to_html(cursor, entry_dict)
+        if _is_full_html_document(entry_html):
+            return fastapi.responses.HTMLResponse(entry_html)
+        else:
+            return templates.TemplateResponse(
+                request=request,
+                name="viewer.html",
+                context={
+                    "title": entry_dict.get("title", entry_alias),
+                    "body": entry_html,
+                },
+            )
 
 
 @app.get("/api/json/{entry_alias:path}")
@@ -312,6 +318,16 @@ def get_index(q: str | None = None):
     """
 
 
+@app.get("/css/default-light.css")
+async def css_default_light():
+    return fastapi.responses.FileResponse(os.path.join(_CSS_DIR, "default-light.css"))
+
+
+@app.get("/css/default-dark.css")
+async def css_default_dark():
+    return fastapi.responses.FileResponse(os.path.join(_CSS_DIR, "default-dark.css"))
+
+
 @app.get("/katex/katex.min.js")
 async def katex_js():
     return fastapi.responses.FileResponse(os.path.join(_KATEX_DIR, "katex.min.js"))
@@ -348,16 +364,18 @@ def get_entry(request: fastapi.Request, entry_alias: str):
         if "file_hash" not in entry_dict or not isinstance(
             entry_dict["file_hash"], str
         ):
-            return templates.TemplateResponse(
-                request=request,
-                name="viewer.html",
-                context={
-                    "title": entry_dict.get("title", entry_alias),
-                    "body": quasilattice.markup.render_entry_to_html(
-                        cursor, entry_dict
-                    ),
-                },
-            )
+            entry_html = quasilattice.markup.render_entry_to_html(cursor, entry_dict)
+            if _is_full_html_document(entry_html):
+                return fastapi.responses.HTMLResponse(entry_html)
+            else:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="viewer.html",
+                    context={
+                        "title": entry_dict.get("title", entry_alias),
+                        "body": entry_html,
+                    },
+                )
         else:
             file_dir = os.path.join(
                 quasilattice.config["quasilattice"]["files_dir"],

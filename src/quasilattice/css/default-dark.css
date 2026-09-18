@@ -1,0 +1,221 @@
+/* QuasiLattice default-light theme */
+
+:root {
+  --invert-images: 0.88;
+  --invert-dark-images: 0;
+  --color-text: #c9c9c9;
+  --color-background: #222222;
+  --color-background-alt: #4a4a4a;
+  --color-background-alt2: #888;
+  --color-highlight: #FFF;
+  --color-fade: #c9c9c9;
+  --color-link: #63cbff;
+  --color-link-visited: #b96dff;
+  --color-link-active: #ff8484;
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+body {
+  margin: auto;
+  color: var(--color-text);
+  background-color: var(--color-background);
+  padding: 13px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  -ms-word-break: break-all;
+  word-break: break-word;
+}
+
+hr {
+  border-color: var(--color-highlight);
+}
+
+a {
+  text-decoration: none;
+  color: var(--color-link);
+}
+
+a:visited {
+  color: var(--color-link-visited);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a:active,
+a:visited:active {
+  color: var(--color-link-active);
+}
+
+
+blockquote {
+  margin-left: 0px;
+  margin-right: 0px;
+  padding-left: 1em;
+  padding-top: 0.8em;
+  padding-bottom: 0.8em;
+  padding-right: 0.8em;
+  border-left: 5px solid var(--color-highlight);
+  background-color: var(--color-background-alt);
+}
+
+blockquote p {
+  margin-bottom: 0;
+}
+
+img,
+video {
+  height: auto;
+  max-width: 100%;
+  margin-top: 0px;
+}
+
+/* Pre and Code */
+pre {
+  background-color: var(--color-background-alt);
+  display: block;
+  padding: 0.8em;
+  overflow-x: auto;
+  margin-top: 0px;
+}
+
+code,
+kbd,
+samp {
+  padding: 0 0.5em;
+  background-color: var(--color-background-alt);
+  white-space: pre-wrap;
+}
+
+pre>code {
+  padding: 0;
+  background-color: transparent;
+  white-space: pre;
+}
+
+/* Tables */
+table {
+  text-align: justify;
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 2rem;
+}
+
+th {
+  padding: 0.2em;
+  padding-right: 1em;
+  border-bottom: 1px solid var(--color-background-alt2);
+}
+
+td {
+  padding: 0.2em;
+  border-bottom: 1px solid var(--color-background-alt);
+}
+
+/* Buttons, forms and input */
+input,
+textarea {
+  border: 1px solid var(--color-text);
+}
+
+input:focus,
+textarea:focus {
+  border: 1px solid var(--color-highlight);
+}
+
+textarea {
+  width: 100%;
+}
+
+.button,
+button,
+input[type=submit],
+input[type=reset],
+input[type=button],
+input[type=file]::file-selector-button {
+  display: inline-block;
+  padding: 5px 10px;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  background-color: var(--color-highlight);
+  color: var(--color-background);
+  border: 1px solid var(--color-highlight);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.button:hover,
+button:hover,
+input[type=submit]:hover,
+input[type=reset]:hover,
+input[type=button]:hover,
+input[type=file]::file-selector-button:hover {
+  background-color: var(--color-fade);
+  color: var(--color-background);
+  outline: 0;
+}
+
+.button[disabled],
+button[disabled],
+input[type=submit][disabled],
+input[type=reset][disabled],
+input[type=button][disabled],
+input[type=file][disabled] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.button:focus-visible,
+button:focus-visible,
+input[type=submit]:focus-visible,
+input[type=reset]:focus-visible,
+input[type=button]:focus-visible,
+input[type=file]:focus-visible {
+  outline-style: solid;
+  outline-width: 2px;
+}
+
+textarea,
+select,
+input {
+  color: var(--color-text);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  background-color: var(--color-background-alt);
+  border: 1px solid var(--color-background-alt);
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+textarea:focus,
+select:focus,
+input:focus {
+  border: 1px solid var(--color-highlight);
+  outline: 0;
+}
+
+input[type=checkbox]:focus {
+  outline: 1px dotted var(--color-highlight);
+}
+
+label,
+legend,
+fieldset {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
