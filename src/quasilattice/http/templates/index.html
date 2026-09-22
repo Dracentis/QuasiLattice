@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <title>QuasiLattice v{{ version }}</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="stylesheet" href="/themes/default.css">
+    <link rel="stylesheet" href="/katex/katex.min.css"
+        integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
+    <script defer src="/katex/katex.min.js"
+        integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj"
+        crossorigin="anonymous"></script>
+    <style>
+        html {
+            overflow-x: hidden;
+        }
+
+        body {
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .clickable {
+            cursor: pointer;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .search-bar {
+            color: var(--color-text);
+            background-color: var(--color-background);
+            border: 1px solid var(--color-text);
+            font-size: 15px;
+            height: 33px;
+        }
+
+        .button {
+            color: var(--color-text);
+            background-color: var(--color-background);
+            border: 1px solid var(--color-text);
+            font-size: 15px;
+            height: 33px;
+            display :inline-flex;
+            width: auto;
+            align-items: center;
+        }
+
+        .button:hover {
+            color: var(--color-background);
+            background-color: var(--color-text);
+        }
+
+        .button:active {
+            color: var(--color-text);
+            background-color: var(--color-background-alt);
+        }
+
+        .menu-bar {
+            display: grid;
+            grid-template-columns: calc(100% - 150px) 150px;
+            grid-template-rows: 100%;
+            font-size: 15px;
+            align-items: center;
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .login-button {
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 5ch calc(100% - 10ch);
+            grid-template-rows: 100%;
+            stroke: var(--color-text);
+            background-color: var(--color-background);
+            border-left: 1px solid var(--color-text);
+            float: right;
+            top: 0;
+            right: 0;
+        }
+
+
+        .login-button path,
+        .login-button rect {
+            fill: var(--color-text);
+        }
+
+        .login-button:hover {
+            color: var(--color-background);
+            stroke: var(--color-background);
+            background-color: var(--color-text);
+        }
+
+
+        .login-button:hover path,
+        .login-button:hover rect {
+            fill: var(--color-background);
+        }
+
+        .login-button:active {
+            color: var(--color-text);
+            stroke: var(--color-text);
+            background-color: var(--color-background-alt);
+        }
+
+
+        .login-button:active path,
+        .login-button:active rect {
+            fill: var(--color-text);
+        }
+
+        .login-button-text {
+            display: flex;
+            margin: 0;
+            align-items: center;
+            color: inherit
+        }
+
+        .main-menu {
+            padding: 4ch;
+        }
+
+    </style>
+    <script defer src="/katex/contrib/auto-render.min.js"
+        integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz"
+        crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div class="menu-bar" width="100%" height="5ch" margin="0">
+        <div font-size="inherit" style="padding-left: 26.66666666px;">QuasiLattice  v{{ version }}</div>
+        <div class="login-button clickable" font-size="inherit">
+            <svg id="_login-logo" font-size="12px" width="5ch" height="5ch" viewBox="-8 -8 48 48" version="1.1"
+                    xmlns="http://www.w3.org/2000/svg" style="margin-left: 1ch;">
+                    <title>Login</title>
+                    <path
+                        d="M12.219 26.156h6.094c1.156 0 2.125-0.406 2.875-1.188 0.75-0.75 1.219-1.75 1.219-2.875v-12.219c0-1.125-0.469-2.125-1.219-2.875s-1.75-1.188-2.875-1.188h-6.094v2.563h6.094c0.875 0 1.531 0.656 1.531 1.5v12.219c0 0.844-0.656 1.531-1.531 1.531h-6.094v2.531zM0 13.563v4.875c0 0.563 0.469 1.031 1.031 1.031h5.688v3.844c0 0.344 0.156 0.625 0.469 0.781 0.125 0.031 0.281 0.031 0.344 0.031 0.219 0 0.406-0.063 0.563-0.219l7.344-7.344c0.281-0.281 0.25-0.844 0-1.156l-7.344-7.313c-0.25-0.25-0.563-0.281-0.906-0.188-0.313 0.156-0.469 0.406-0.469 0.75v3.875h-5.688c-0.563 0-1.031 0.469-1.031 1.031z">
+                    </path>
+                </svg>
+            <div class="login-button-text">Login</div>
+        </div>
+    </div>
+    <div class="main-menu">
+    <div class="button clickable">New Entry</div>
+    <br/>
+    <br/>
+    <input class="search-bar"></input><div class="button clickable" style="border-left: 0;">Search</div>
+    <br/>
+    <br/>
+    <table>
+        <thead>
+            <tr>
+                <th onclick="sort('id')">UUID <span class="sort-indicator" id="indicator-id"></span></th>
+                <th onclick="sort('created')">Created <span class="sort-indicator" id="indicator-created"></span></th>
+                <th onclick="sort('edited')">Last Modified <span class="sort-indicator" id="indicator-edited"></span>
+                </th>
+            </tr>
+        </thead>
+        <tbody id="body"></tbody>
+    </table>
+    </div>
+
+    <script>
+        const data = [
+            { id: '550e8400-e29b-41d4-a716-446655440000', created: new Date('2024-01-15T08:30:00'), edited: new Date('2024-06-20T14:22:00') },
+            { id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', created: new Date('2023-11-22T10:15:00'), edited: new Date('2024-07-10T09:45:00') },
+            { id: '3fa85f64-5717-4562-b3fc-2c963f66afa6', created: new Date('2024-03-08T16:45:00'), edited: new Date('2024-05-15T11:20:00') },
+            { id: '8f14e45f-ceea-11e1-9b23-0800200c9a66', created: new Date('2024-02-28T12:00:00'), edited: new Date('2024-08-01T15:30:00') },
+            { id: '1c9c6a61-c8ae-49c0-98d6-46a3c5f5e9f6', created: new Date('2023-12-05T09:20:00'), edited: new Date('2024-07-22T13:15:00') },
+            { id: 'a5e4f2c1-8b3d-44f1-9c6e-2f8d7a9b0e1c', created: new Date('2024-04-12T14:30:00'), edited: new Date('2024-06-10T10:45:00') },
+            { id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', created: new Date('2024-01-30T11:10:00'), edited: new Date('2024-08-05T16:20:00') },
+            { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d', created: new Date('2023-10-18T13:40:00'), edited: new Date('2024-07-18T12:00:00') },
+            { id: '7f7db0ba-5d15-4d7f-9f8e-1b2c3d4e5f6a', created: new Date('2024-05-20T15:25:00'), edited: new Date('2024-08-08T14:50:00') },
+            { id: 'c0a3521a-5d4f-4d45-8d50-48c4c9b5b8a5', created: new Date('2024-02-14T10:05:00'), edited: new Date('2024-06-25T09:30:00') },
+        ];
+
+        let sortKey = 'id';
+        let ascending = true;
+
+        function sort(key) {
+            if (sortKey === key) {
+                ascending = !ascending;
+            } else {
+                sortKey = key;
+                ascending = true;
+            }
+            render();
+        }
+
+        function render() {
+            const sorted = [...data].sort((a, b) => {
+                const aVal = a[sortKey];
+                const bVal = b[sortKey];
+                const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                return ascending ? cmp : -cmp;
+            });
+
+            document.getElementById('body').innerHTML = sorted.map(item => `
+                <tr>
+                    <td class="uuid">${item.id}</td>
+                    <td>${item.created.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                    <td>${item.edited.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                </tr>
+            `).join('');
+
+            ['id', 'created', 'edited'].forEach(key => {
+                const ind = document.getElementById(`indicator-${key}`);
+                ind.textContent = sortKey === key ? (ascending ? '↑' : '↓') : '';
+            });
+        }
+
+        render();
+    </script>
+</body>
+
+</html>

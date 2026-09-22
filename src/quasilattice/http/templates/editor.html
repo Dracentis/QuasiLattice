@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <title>{{title}}</title>
+    {% for key, value in metadata.items() %}
+    {% if key != "viewport" and key != "content" and value is not none %}
+    <meta name="{{ key }}" content="{{ value }}">
+    {% endif %}
+    {% endfor %}
+    {% if metadata.viewport %}
+    <meta name="viewport" content="{{ metadata.viewport }}">
+    {% else %}
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    {% endif %}
+    <link rel="stylesheet" href="/themes/default.css">
+    <link rel="stylesheet" href="/katex/katex.min.css"
+        integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
+    <style>
+        html {
+            overflow-x: hidden;
+        }
+
+        body {
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .invisible {
+            /* hides and element but still allows it to take space */
+            visibility: hidden;
+        }
+
+        .hide {
+            /* hides an element without completely removing it from document */
+            position: absolute !important;
+            top: -9999px !important;
+            left: -9999px !important;
+        }
+
+        .gone {
+            /* hides an element so it is completely inaccessible */
+            display: none !important;
+        }
+
+        .list {
+            /* vbox container */
+            display: grid;
+            grid-template-columns: 100%;
+            grid-template-rows: minmax(min-content, max-content);
+            grid-auto-rows: minmax(min-content, max-content);
+        }
+
+        .textcenter {
+            display: flex;
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .textvertcenter {
+            display: flex;
+            margin: 0;
+            align-items: center;
+        }
+
+        .border {
+            background-color: var(--color-background);
+            border-style: solid;
+            border-width: 1px;
+            border-color: var(--color-text);
+        }
+
+        .topborder {
+            background-color: var(--color-background);
+            border-top: 1px solid var(--color-text);
+        }
+
+        .bottomborder {
+            background-color: var(--color-background);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .leftborder {
+            background-color: var(--color-background);
+            border-left: 1px solid var(--color-text);
+        }
+
+        .rightborder {
+            background-color: var(--color-background);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .clickable {
+            cursor: pointer;
+            fill: var(--color-text);
+            color: var(--color-text);
+            background-color: var(--color-background);
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .clickable:hover {
+            fill: var(--color-background);
+            color: var(--color-background);
+            background-color: var(--color-text);
+        }
+
+        .clickable:active {
+            fill: var(--color-text);
+            color: var(--color-text);
+            background-color: var(--color-background-alt);
+        }
+
+        textarea {
+            border: none;
+        }
+
+        textarea:focus {
+            border: none;
+        }
+
+
+        .textarea-grow {
+            /* easy way to plop the elements on top of each other and have them both sized based on the tallest one's height */
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 100%;
+            grid-template-rows: 100%;
+        }
+
+        .textarea-grow::after {
+            /* the weird space is needed to preventy jumpy behavior */
+            content: attr(data-replicated-value) " ";
+
+            /* how textarea text behaves */
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+
+            /* hide from view, clicks, and screen readers */
+            visibility: hidden;
+        }
+
+        .textarea-grow>textarea {
+            resize: none;
+            padding: 0;
+            border: none;
+
+            /* hide Firefox scrollbar */
+            overflow: hidden;
+        }
+
+        .textarea-grow>textarea,
+        .textarea-grow::after {
+            /* identical styling required!! */
+            border: none;
+            padding: 0;
+            /* 0.5rem */
+            font: inherit;
+
+            /* place on top of each other */
+            grid-area: 1 / 1 / 2 / 2;
+        }
+
+        .input-grow {
+            display: inline-grid;
+            vertical-align: top;
+            align-items: center;
+            position: relative;
+        }
+
+        .input-grow.stacked {
+            align-items: stretch;
+        }
+
+        .input-grow.stacked::after,
+        .input-grow>input,
+        .input-grow>textarea {
+            grid-area: 2 / 1;
+        }
+
+        .input-grow::after,
+        .input-grow>input,
+        .input-grow>textarea {
+            grid-area: 1 / 2;
+            font: inherit;
+            resize: none;
+            background: none;
+            appearance: none;
+            border: none;
+        }
+
+        .input-grow::after {
+            content: attr(data-value) " ";
+            visibility: hidden;
+            white-space: pre-wrap;
+        }
+
+        .entry-content {
+            display: block;
+            width: 100%;
+        }
+
+        textarea {
+            color: inherit;
+            background-color: inherit;
+            font-size: inherit;
+            border: none;
+            font-family: inherit;
+            font-size: inherit;
+            resize: none;
+            font-weight: inherit;
+            overflow: hidden;
+            min-height: 20px;
+        }
+
+        /* #region Menu Buttons CSS */
+        .left-menu-button {
+            fill: var(--color-text);
+            background-color: var(--color-background);
+            cursor: pointer;
+            position: fixed;
+            z-index: 9999;
+            top: 0;
+            left: 0;
+        }
+
+        .left-menu-button-closed {
+            opacity: 0;
+            border-right: 1px solid var(--color-background);
+            border-bottom: 1px solid var(--color-background);
+        }
+
+        .left-menu-button-open {
+            opacity: 1;
+            border-right: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .left-menu-button:hover {
+            opacity: 1;
+            fill: var(--color-background);
+            background-color: var(--color-text);
+            border-right: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .left-menu-button:active {
+            opacity: 1;
+            fill: var(--color-text);
+            background-color: var(--color-background-alt);
+            border-right: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .right-menu-button {
+            stroke: var(--color-text);
+            background-color: var(--color-background);
+            border-left: 1px solid var(--color-background);
+            border-bottom: 1px solid var(--color-background);
+            cursor: pointer;
+            position: fixed;
+            z-index: 9999;
+            top: 0;
+            right: 0;
+        }
+
+
+
+        .right-menu-button path,
+        .right-menu-button rect {
+            fill: var(--color-text);
+        }
+
+        .right-menu-button-closed {
+            opacity: 0;
+            border-left: 1px solid var(--color-background);
+            border-bottom: 1px solid var(--color-background);
+            visibility: hidden
+        }
+
+        .right-menu-button-open {
+            opacity: 1;
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .right-menu-button:hover {
+            opacity: 1;
+            stroke: var(--color-background);
+            background-color: var(--color-text);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+
+        .right-menu-button:hover path,
+        .right-menu-button:hover rect {
+            fill: var(--color-background);
+        }
+
+        .right-menu-button:active {
+            opacity: 1;
+            stroke: var(--color-text);
+            background-color: var(--color-background-alt);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+        .right-menu-button:active path,
+        .right-menu-button:active rect {
+            fill: var(--color-text);
+        }
+
+        .left-menu-button:hover~.left-menu-button-scrollable {
+            visibility: hidden;
+        }
+
+        .left-menu-button-scrollable {
+            fill: var(--color-text);
+            background-color: var(--color-background);
+            cursor: pointer;
+            float: right;
+            top: 0;
+            right: 0;
+        }
+
+        .left-menu-button-scrollable:hover {
+            fill: var(--color-background);
+            background-color: var(--color-text);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .left-menu-button-scrollable:active {
+            fill: var(--color-text);
+            background-color: var(--color-background-alt);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .left-menu-table-of-contents {
+            height: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .left-menu-table-of-contents-collapsible {
+            background-color: var(--color-background);
+            color: var(--color-text);
+            cursor: pointer;
+            width: 100%;
+            border: none;
+            display: flex;
+            padding: 0;
+            align-items: center;
+            text-align: center;
+            outline: none;
+            font-size: inherit;
+        }
+
+        .left-menu-table-of-contents-collapsible:hover {
+            background-color: var(--background-light);
+        }
+
+        .left-menu-table-of-contents-collapsible-content {
+            padding: 0 0 0 10px;
+            overflow: hidden;
+            background-color: var(--color-background);
+        }
+
+        .table-of-contents-entry-title {
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            padding: 2px;
+            color: var(--color-text);
+        }
+
+        .table-of-contents-entry-title:hover {
+            background-color: var(--background-light);
+        }
+
+        .table-of-contents-entry-depth0 {
+            font-size: 1.5em;
+        }
+
+        .table-of-contents-entry-depth1 {
+            font-size: 1.15em;
+        }
+
+        .table-of-contents-entry-depth2 {
+            font-size: 1em;
+        }
+
+        .table-of-contents-entry-depth3 {
+            font-size: 0.95em;
+        }
+
+        .table-of-contents-entry {
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 2ch calc(100% - 2ch);
+            grid-template-rows: minmax(min-content, max-content);
+            grid-auto-rows: minmax(min-content, max-content);
+        }
+
+        .right-menu-button-scrollable {
+            stroke: var(--color-text);
+            background-color: var(--color-background);
+            border-left: 1px solid var(--color-background);
+            border-bottom: 1px solid var(--color-background);
+            cursor: pointer;
+            float: right;
+            top: 0;
+            right: 0;
+        }
+
+
+        .right-menu-button-scrollable path,
+        .right-menu-button-scrollable rect {
+            fill: var(--color-text);
+        }
+
+        .right-menu-button-scrollable:hover {
+            stroke: var(--color-background);
+            background-color: var(--color-text);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+
+        .right-menu-button-scrollable:hover path,
+        .right-menu-button-scrollable:hover rect {
+            fill: var(--color-background);
+        }
+
+        .right-menu-button-scrollable:active {
+            stroke: var(--color-text);
+            background-color: var(--color-background-alt);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+        }
+
+
+        .right-menu-button-scrollable:active path,
+        .right-menu-button-scrollable:active rect {
+            fill: var(--color-text);
+        }
+
+        .dark-mode-button-scrollable {
+            fill: none;
+            background-color: var(--color-background);
+            cursor: pointer;
+            float: right;
+            top: 0;
+            right: 0;
+            border-left: 1px solid var(--color-background);
+            border-bottom: 1px solid var(--color-background);
+            border-right: 1px solid var(--color-background);
+        }
+
+        .dark-mode-button-scrollable path {
+            fill: var(--color-text);
+        }
+
+        .dark-mode-button-scrollable:hover {
+            fill: none;
+            background-color: var(--color-text);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .dark-mode-button-scrollable:hover path {
+            fill: var(--color-background);
+        }
+
+        .dark-mode-button-scrollable:active {
+            background-color: var(--color-background-alt);
+            fill: var(--color-text);
+            border-left: 1px solid var(--color-text);
+            border-bottom: 1px solid var(--color-text);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .dark-mode-button-scrollable:active path {
+            fill: var(--color-text);
+        }
+
+        /* #endregion Menu Buttons CSS */
+
+        /* #region Content Columns CSS */
+        .content-columns-grid {
+            /* vertical menu container */
+            display: grid;
+            grid-template-columns: 0px 100% 0px;
+            grid-template-rows: minmax(min-content, max-content);
+            grid-auto-rows: minmax(min-content, max-content);
+        }
+
+        .content-columns-grid-left {
+            /* vertical menu container */
+            display: grid;
+            grid-template-columns: calc(min(100%, 300px)) calc(100% - calc(min(100%, 300px))) 0px;
+            grid-template-rows: minmax(min-content, max-content);
+            grid-auto-rows: minmax(min-content, max-content);
+        }
+
+        .content-columns-grid-right {
+            /* vertical menu container */
+            display: grid;
+            grid-template-columns: 0px calc(100% - calc(min(100%, 400px))) calc(min(100%, 400px));
+            grid-template-rows: minmax(min-content, max-content);
+            grid-auto-rows: minmax(min-content, max-content);
+        }
+
+        @media only screen and (max-width: 600px) {
+            .content-columns-grid-left {
+                grid-template-columns: 0px 100% 0px;
+            }
+        }
+
+        @media only screen and (max-width: 700px) {
+            .content-columns-grid-right {
+                grid-template-columns: 0px 100% 0px;
+            }
+        }
+
+        /* #endregion Content Columns CSS */
+
+        /* #region Menus */
+        .left-menu-wrapper-closed {
+            display: block;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 100vh;
+        }
+
+        .left-menu-wrapper-open {
+            display: block;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: calc(min(100vw, 300px));
+            height: 100vh;
+        }
+
+        .left-menu {
+            background-color: var(--color-background);
+            box-shadow: -1px 0px 5px var(--color-background-alt2);
+            display: grid;
+            overflow: hidden;
+            position: absolute;
+            left: 0;
+            top: 0;
+            grid-template-columns: calc(min(100vw, 300px));
+            grid-template-rows: calc(5ch + 1px) calc(100vh - 5ch - 1px);
+            border-right: 1px solid var(--color-text);
+        }
+
+        .left-menu-header {
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 5ch calc(100vh - 5ch);
+            grid-template-rows: 100%;
+            font-size: 15px;
+        }
+
+        .right-menu-wrapper-closed {
+            display: block;
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 0;
+            height: 100vh;
+        }
+
+        .right-menu-wrapper-open {
+            display: block;
+            position: fixed;
+            overflow: hidden;
+            right: 0;
+            top: 0;
+            width: calc(min(100vw, 400px));
+            height: 100vh;
+            box-sizing: border-box;
+            margin: 0;
+        }
+
+        .right-menu {
+            background-color: var(--color-background);
+            box-shadow: 1px 0px 5px var(--color-background-alt2);
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 100%;
+            grid-template-rows: calc(5ch + 1px) calc(100vh - 5ch - 1px);
+            border-left: 1px solid var(--color-text);
+        }
+
+        .right-menu-header {
+            display: grid;
+            overflow: hidden;
+            grid-template-columns: 5ch calc(100% - 10ch);
+            grid-template-rows: 100%;
+        }
+
+        /* #endregion Menus */
+
+        /* #region Dropdown Menus */
+        .dropbtn {
+            color: var(--color-text);
+            background: none;
+            border-style: solid;
+            border-width: 0px;
+            cursor: pointer;
+        }
+
+        .dropbtn:hover {
+            background-color: var(--color-text);
+            color: var(--color-background);
+        }
+
+        .dropbtn:active {
+            background-color: var(--color-background-alt);
+            color: var(--color-text);
+        }
+
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: block;
+            position: absolute;
+            transition: 0;
+            z-index: 4;
+            transition-delay: 0;
+            box-shadow: 0px 2px 5px 0px var(--color-background-alt2);
+            visibility: hidden;
+        }
+
+        .dropdown-content:hover {
+            visibility: visible;
+        }
+
+        .dropbtn:focus-within+.dropdown-content {
+            visibility: visible;
+        }
+
+        /* #endregion Dropdown Menus */
+    </style>
+    <script defer src="/katex/katex.min.js"
+        integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj"
+        crossorigin="anonymous"></script>
+    <script defer src="/katex/contrib/auto-render.min.js"
+        integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz"
+        crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div class="content-columns-grid" id="_content-columns-grid">
+        <div>
+        </div>
+
+        <div>
+            <!-- #region Menu Buttons -->
+            <div width="100%" height="5ch">
+                <svg class="left-menu-button left-menu-button-closed" id="_left-menu-button" width="5ch" height="5ch"
+                    viewBox="-8 -8 48 48" xmlns="http://www.w3.org/2000/svg" onclick="toggleLeftMenu()">
+                    <rect x="4" y="6" width="18" height="2" />
+                    <rect x="4" y="12" width="18" height="2" />
+                    <rect x="4" y="18" width="18" height="2" />
+                    <rect x="4" y="24" width="18" height="2" />
+                    <rect x="26" y="6" width="2" height="2" />
+                    <rect x="26" y="12" width="2" height="2" />
+                    <rect x="26" y="18" width="2" height="2" />
+                    <rect x="26" y="24" width="2" height="2" />
+                </svg>
+
+
+                <svg class="right-menu-button right-menu-button-closed" id="_right-menu-button" width="5ch" height="5ch"
+                    viewBox="-10 -10 52 52" xmlns="http://www.w3.org/2000/svg" onclick="toggleRightMenu()">
+                    <rect x="18" y="19" width="12" height="2" />
+                    <rect x="18" y="23" width="12" height="2" />
+                    <rect x="18" y="27" width="8" height="2" />
+                    <path
+                        d="M24,4a3.9962,3.9962,0,0,0-3.8579,3H12V4H4v8h8V9h8.1421a3.94,3.94,0,0,0,.4248,1.019L10.019,20.5669A3.9521,3.9521,0,0,0,8,20a4,4,0,1,0,3.8579,5H16V23H11.8579a3.94,3.94,0,0,0-.4248-1.019L21.981,11.4331A3.9521,3.9521,0,0,0,24,12a4,4,0,0,0,0-8ZM10,10H6V6h4ZM8,26a2,2,0,1,1,2-2A2.0023,2.0023,0,0,1,8,26ZM24,10a2,2,0,1,1,2-2A2.0023,2.0023,0,0,1,24,10Z"
+                        transform="translate(0 0)" />
+                </svg>
+
+
+                <svg class="right-menu-button-scrollable" id="_right-menu-button-scrollable" width="5ch" height="5ch"
+                    viewBox="-10 -10 52 52" xmlns="http://www.w3.org/2000/svg" onclick="toggleRightMenu()">
+
+                    <rect x="18" y="19" width="12" height="2" />
+                    <rect x="18" y="23" width="12" height="2" />
+                    <rect x="18" y="27" width="8" height="2" />
+                    <path
+                        d="M24,4a3.9962,3.9962,0,0,0-3.8579,3H12V4H4v8h8V9h8.1421a3.94,3.94,0,0,0,.4248,1.019L10.019,20.5669A3.9521,3.9521,0,0,0,8,20a4,4,0,1,0,3.8579,5H16V23H11.8579a3.94,3.94,0,0,0-.4248-1.019L21.981,11.4331A3.9521,3.9521,0,0,0,24,12a4,4,0,0,0,0-8ZM10,10H6V6h4ZM8,26a2,2,0,1,1,2-2A2.0023,2.0023,0,0,1,8,26ZM24,10a2,2,0,1,1,2-2A2.0023,2.0023,0,0,1,24,10Z"
+                        transform="translate(0 0)" />
+                </svg>
+
+
+                <svg class="dark-mode-button-scrollable" id="_dark-mode-button-scrollable" width="5ch" height="5ch"
+                    viewBox="
+                    -8 -8 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" onclick="toggleDarkMode()">
+                    <path fill-rule="evenodd" d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 1.5v13a6.5 6.5 0 100-13z"
+                        clip-rule="evenodd" />
+                </svg>
+
+
+                <svg class="left-menu-button-scrollable" id="_left-menu-button-scrollable" width="5ch" height="5ch"
+                    viewBox="-8 -8 48 48" xmlns="http://www.w3.org/2000/svg" onclick="toggleLeftMenu()">
+                    <rect x="4" y="6" width="18" height="2" />
+                    <rect x="4" y="12" width="18" height="2" />
+                    <rect x="4" y="18" width="18" height="2" />
+                    <rect x="4" y="24" width="18" height="2" />
+                    <rect x="26" y="6" width="2" height="2" />
+                    <rect x="26" y="12" width="2" height="2" />
+                    <rect x="26" y="18" width="2" height="2" />
+                    <rect x="26" y="24" width="2" height="2" />
+                </svg>
+            </div>
+            <!-- #endregion Menu Buttons -->
+            <div class="list" id="_main" style="padding-left: 5ch; padding-right: 5ch; margin-top: calc(5ch + 1px);">
+                <div style="overflow-wrap: break-word;">
+                    {{body|safe}}
+                </div>
+                <div style="height: 200px;"></div>
+            </div>
+        </div>
+
+        <div>
+        </div>
+    </div>
+
+    <div id="_left-menu-wrapper" class="left-menu-wrapper-closed">
+        <div id="_left-menu" class="left-menu invisible">
+            <div style="margin-left: calc(5ch);">
+                <div class="dropdown bottomborder" style="width: 100%; height: 5ch;">
+                    <button class="dropbtn clickable"
+                        style="width: 100%; height: 100%; font-size: 15px; margin-bottom: 1px;">
+                        <div id="_left-menu-header" class="textvertcenter" style="float:left; height: 100%;">
+                            Table of Contents
+                        </div>
+                        <h2 class="textvertcenter" style="float:right; margin: 0; font-size: 18px; height: 100%">
+                            &#9662;
+                        </h2>
+                    </button>
+                    <div class="dropdown-content leftborder">
+                        <div class="list" style="margin-top: 0;">
+                            <a href="/api/entry/html/{{ entry_alias }}" class="bottomborder textvertcenter clickable"
+                                style="width: calc(300px - 5ch); height: 5ch; text-decoration: none;">
+                                <div class="textvertcenter clickable"
+                                    style="width: 100%; height: 100%; padding-left:10px; font-size: 15px;">
+                                    View Raw HTML
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="_table-of-contents" class="left-menu-table-of-contents">
+            </div>
+        </div>
+    </div>
+
+    <div id="_right-menu-wrapper" class="right-menu-wrapper-closed">
+        <div id="_right-menu" class="right-menu invisible">
+            <a id="_right-menu-header" class="right-menu-header bottomborder clickable" style="text-decoration: none;"
+                href="/auth/login">
+                <svg width="calc(5ch - 1px)" height="calc(5ch - 1px)" viewBox="-8 -8 48 48" version="1.1"
+                    xmlns="http://www.w3.org/2000/svg" style="margin-left: 1ch;">
+                    <title>Login</title>
+                    <path
+                        d="M12.219 26.156h6.094c1.156 0 2.125-0.406 2.875-1.188 0.75-0.75 1.219-1.75 1.219-2.875v-12.219c0-1.125-0.469-2.125-1.219-2.875s-1.75-1.188-2.875-1.188h-6.094v2.563h6.094c0.875 0 1.531 0.656 1.531 1.5v12.219c0 0.844-0.656 1.531-1.531 1.531h-6.094v2.531zM0 13.563v4.875c0 0.563 0.469 1.031 1.031 1.031h5.688v3.844c0 0.344 0.156 0.625 0.469 0.781 0.125 0.031 0.281 0.031 0.344 0.031 0.219 0 0.406-0.063 0.563-0.219l7.344-7.344c0.281-0.281 0.25-0.844 0-1.156l-7.344-7.313c-0.25-0.25-0.563-0.281-0.906-0.188-0.313 0.156-0.469 0.406-0.469 0.75v3.875h-5.688c-0.563 0-1.031 0.469-1.031 1.031z">
+                    </path>
+                </svg>
+                <div class="textvertcenter clickable" style="font-size: 15px;">Login</div>
+            </a>
+            <textarea style="overflow-y: auto; overflow-x: hidden;">{{ entry_json }}</textarea>
+        </div>
+    </div>
+
+    <script>
+        // Measures the width of the browser's scrollbar
+        function getScrollbarWidth() {
+            // Creating invisible container
+            const outer = document.createElement('div');
+            outer.style.visibility = 'hidden';
+            outer.style.overflow = 'scroll'; // forcing scrollbar to appear
+            outer.style.msOverflowStyle = 'scrollbar'; // needed for WinJS apps
+            document.body.appendChild(outer);
+
+            // Creating inner element and placing it in the container
+            const inner = document.createElement('div');
+            outer.appendChild(inner);
+
+            // Calculating difference between container's full width and the child width
+            const scrollbarWidth = (outer.offsetWidth - inner.offsetWidth);
+
+            // Removing temporary elements from the DOM
+            outer.parentNode.removeChild(outer);
+
+            return scrollbarWidth;
+
+        }
+
+        // Save the currently selected elements to be restored later
+        function saveSelection() {
+            selectedElement = document.activeElement;
+            selection = window.getSelection();
+            if (selection && selectedElement) {
+                savedElement = selectedElement;
+                saved = [selection.anchorNode, selection.anchorOffset, selection.focusNode, selection.focusOffset];
+                isSaved = true;
+            }
+        }
+
+        // Restores the saved selection
+        function restoreSelection() {
+            if (isSaved && saved && savedElement) {
+                savedElement.focus();
+                selection = window.getSelection();
+                selection.setBaseAndExtent(saved[0], saved[1], saved[2], saved[3]);
+            }
+        }
+
+        // Some utilities for detecting the caret position inside a contenteditable element
+        function getCaretPos(input) {
+            if ("selectionStart" in input && document.activeElement == input) {
+                return input.selectionEnd;
+            }
+            else if (input.createTextRange) {
+                var sel = document.selection.createRange();
+                if (sel.parentElement() === input) {
+                    var rng = input.createTextRange();
+                    rng.moveToBookmark(sel.getBookmark());
+                    for (var len = 0;
+                        rng.compareEndPoints("EndToStart", rng) > 0;
+                        rng.moveEnd("character", -1)) {
+                        len++;
+                    }
+                    rng.setEndPoint("StartToStart", input.createTextRange());
+                    for (var pos = { start: 0, end: len };
+                        rng.compareEndPoints("EndToStart", rng) > 0;
+                        rng.moveEnd("character", -1)) {
+                        pos.start++;
+                        pos.end++;
+                    }
+                    return pos;
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * Get the number of characters in an element
+         *
+         * @param {Element} element
+         * @return {number}
+         */
+        function getTextLength(element) {
+            let range = element.ownerDocument.createRange()
+            range.selectNodeContents(element)
+
+            return range.toString().length
+        }
+
+        /**
+         * Get the character offset the caret is currently at
+         *
+         * @param {Element} element
+         * @return {number}
+         */
+        function getCaretOffset(element) {
+            let sel = element.ownerDocument.defaultView.getSelection()
+            if (sel.rangeCount === 0) return 0
+
+            let range = element.ownerDocument.defaultView.getSelection().getRangeAt(0)
+            let preCaretRange = range.cloneRange()
+            preCaretRange.selectNodeContents(element)
+            preCaretRange.setEnd(range.endContainer, range.endOffset)
+            return preCaretRange.toString().length
+        }
+
+        /**
+         * Check if the caret is at the start of an element
+         * Returns `false` when the caret is part of a selection
+         *
+         * @param {Element} element
+         * @return {boolean}
+         */
+        function isCaretAtStart(element) {
+            if (element.ownerDocument.activeElement !== element) return false
+            if (
+                element.ownerDocument.defaultView.getSelection().getRangeAt(0).toString()
+                    .length > 0
+            )
+                return false
+
+            return getCaretOffset(element) === 0
+        }
+
+        /**
+         * Check if the caret is at the end of an element
+         * Returns `false` when the caret is part of a selection
+         *
+         * @param {Element} element
+         * @return {boolean}
+         */
+        function isCaretAtEnd(element) {
+            if (element.ownerDocument.activeElement !== element) return false
+            if (
+                element.ownerDocument.defaultView.getSelection().getRangeAt(0).toString()
+                    .length > 0
+            )
+                return false
+
+            return getCaretOffset(element) === getTextLength(element)
+        }
+
+        function isTextareaCaretAtStart(element) {
+            return getCaretPos(element) == 0;
+        }
+
+        function isTextareaCaretAtEnd(element) {
+            return getCaretPos(element) == element.value.length;
+        }
+
+        var _buffer;
+
+        function countLines(textarea, value = null) {
+            if (_buffer == null) {
+                _buffer = document.createElement('textarea');
+                _buffer.style.border = 'none';
+                _buffer.style.height = '0';
+                _buffer.style.overflow = 'hidden';
+                _buffer.style.padding = '0';
+                _buffer.style.position = 'absolute';
+                _buffer.style.left = '0';
+                _buffer.style.top = '0';
+                _buffer.style.zIndex = '-1';
+                _buffer.style.visibility = "hidden";
+                document.body.appendChild(_buffer);
+            }
+
+            var cs = window.getComputedStyle(textarea);
+            var pl = parseInt(cs.paddingLeft);
+            var pr = parseInt(cs.paddingRight);
+            var lh = parseInt(cs.lineHeight);
+
+            // [cs.lineHeight] may return 'normal', which means line height = font size.
+            if (isNaN(lh)) lh = parseInt(cs.fontSize);
+
+            // Copy content width.
+            _buffer.style.width = (textarea.clientWidth - pl - pr) + 'px';
+
+            // Copy text properties.
+            _buffer.style.font = cs.font;
+            _buffer.style.letterSpacing = cs.letterSpacing;
+            _buffer.style.whiteSpace = cs.whiteSpace;
+            _buffer.style.wordBreak = cs.wordBreak;
+            _buffer.style.wordSpacing = cs.wordSpacing;
+            _buffer.style.wordWrap = cs.wordWrap;
+
+            // Copy value.
+            if (value == null) {
+                _buffer.value = textarea.value;
+            } else {
+                _buffer.value = value;
+            }
+
+            var result = Math.floor(_buffer.scrollHeight / lh);
+            if (result == 0) result = 1;
+            return result;
+        }
+
+        function isTextareaCaretOnFirstLine(element) {
+            pos = getCaretPos(element);
+            if (element.value.split("\n").length != countLines(element)) {
+                for (spacePos = pos; spacePos + 1 < element.value.length && element.value[spacePos] != ' '; spacePos++) { }
+                return (countLines(element, element.value.substring(0, spacePos)) == 1 && element.value.substring(0, pos).split("\n").length == 1);
+            }
+            return element.value.substring(0, pos).split("\n").length == 1;
+        }
+
+        function isTextareaCaretOnLastLine(element) {
+            pos = getCaretPos(element);
+            if (element.value.split("\n").length != countLines(element)) {
+                for (spacePos = pos; spacePos + 1 < element.value.length && element.value[spacePos] != ' '; spacePos++) { }
+                return (countLines(element, element.value.substring(0, spacePos)) == countLines(element) && element.value.substring(0, pos).split("\n").length == element.value.split("\n").length);
+            }
+            return element.value.substring(0, pos).split("\n").length == element.value.split("\n").length;
+        }
+
+        function resizeInput(element, minWidth = true) {
+            element.parentNode.dataset.value = element.value;
+            if (!minWidth) {
+                if (element.value == "") {
+                    element.style.width = "1px";
+                    element.parentElement.style.width = "1px";
+                } else {
+                    element.parentElement.style.width = "auto";
+                    element.style.width = "auto";
+                }
+            }
+        }
+
+        function removeItem(arr, value) {
+            var index = arr.indexOf(value);
+            if (index > -1) {
+                arr.splice(index, 1);
+            }
+            return arr;
+        }
+
+        function fallbackCopyTextToClipboard(text) {
+            var textArea = document.createElement("textarea");
+            textArea.value = text;
+
+            // Avoid scrolling to bottom
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                var successful = document.execCommand('copy');
+                var msg = successful ? 'successful' : 'unsuccessful';
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+        function copyTextToClipboard(text) {
+            if (!navigator.clipboard) {
+                fallbackCopyTextToClipboard(text);
+                return;
+            }
+            navigator.clipboard.writeText(text).then(function () {
+            }, function (err) {
+                console.error('Async: Could not copy text: ', err);
+            });
+        }
+
+        saved = null;
+        savedElement = null;
+        isSaved = false;
+    </script>
+
+
+    <script>
+        // element constants
+        const mainElement = document.getElementById("_main");
+        const contentColumnsGridElement = document.getElementById("_content-columns-grid");
+        const leftMenuWrapperElement = document.getElementById("_left-menu-wrapper");
+        const rightMenuWrapperElement = document.getElementById("_right-menu-wrapper");
+        const leftMenuButtonElement = document.getElementById("_left-menu-button")
+        const rightMenuButtonElement = document.getElementById("_right-menu-button");
+        const leftMenuButtonScrollableElement = document.getElementById("_left-menu-button-scrollable");
+        const rightMenuButtonScrollableElement = document.getElementById("_right-menu-button-scrollable");
+        const rightMenuHeaderElement = document.getElementById("_right-menu-header");
+        const darkModeScrollableElement = document.getElementById("_dark-mode-button-scrollable");
+        const leftMenuElement = document.getElementById("_left-menu");
+        const rightMenuElement = document.getElementById("_right-menu");
+
+        const scrollbarWidth = getScrollbarWidth();
+
+        const beforeUnloadListener = (event) => {
+            event.preventDefault();
+            return event.returnValue = 'You have unsaved changes!';
+        };
+
+        var isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var isUnsavedChanges = false;
+        var editedEntryUUIDs = [];
+
+        // scroll quality of life
+        var lastActiveElementID = document.activeElement.id;
+        var savedScrollPositionElement = mainElement;
+        var savedScrollPosition = 0;
+
+        // saves the current scroll position to be restored later
+        function saveScrollPosition() {
+            var scrollTop = document.body.parentElement.scrollTop;
+            for (let i = 0; i < mainElement.children.length; i++) {
+                let child = mainElement.children[i];
+                if (child.offsetTop >= scrollTop) {
+                    savedScrollPositionElement = child;
+                    savedScrollPosition = child.offsetTop - scrollTop;
+                    i = mainElement.children.length;
+                }
+            }
+        }
+
+        // restores the saved scroll position
+        function restoreScrollPosition() {
+            document.body.parentElement.scrollTop = savedScrollPositionElement.offsetTop - savedScrollPosition;
+        }
+
+        function showLeftMenu() {
+            saveScrollPosition();
+
+            // Style menu wrappers
+            leftMenuWrapperElement.classList.add("left-menu-wrapper-open"); // add open class
+            leftMenuWrapperElement.classList.remove("left-menu-wrapper-closed"); // remove close class
+            rightMenuWrapperElement.classList.remove("right-menu-wrapper-open"); // remove open class
+            rightMenuWrapperElement.classList.add("right-menu-wrapper-closed"); // add close class
+
+            // Style content columns grid
+            contentColumnsGridElement.classList.add("content-columns-grid-left"); // add left menu class
+            contentColumnsGridElement.classList.remove("content-columns-grid-right"); // remove right menu class
+            contentColumnsGridElement.classList.remove("content-columns-grid"); // remove default class
+
+            // Style menu buttons
+            leftMenuButtonElement.classList.add("left-menu-button-open"); // add menu button styling
+            leftMenuButtonElement.classList.remove("left-menu-button-closed"); // remove open menu button styling
+            rightMenuButtonElement.classList.remove("right-menu-button-open"); // remove menu button styling
+            rightMenuButtonElement.classList.add("right-menu-button-closed"); // add open menu button styling
+            leftMenuButtonScrollableElement.classList.add("invisible"); // hide left scrollable menu button
+            rightMenuButtonScrollableElement.classList.remove("invisible"); // show right scrollable menu button
+            darkModeScrollableElement.classList.remove("invisible"); // show right scrollable menu button
+
+            // Set visibility
+            rightMenuElement.classList.add("invisible") // hide right menu
+            leftMenuElement.classList.remove("invisible") // unhide left menu
+
+            restoreScrollPosition();
+        }
+
+        function showRightMenu() {
+            saveScrollPosition();
+
+            // Style menu wrappers
+            leftMenuWrapperElement.classList.remove("left-menu-wrapper-open"); // remove open class
+            leftMenuWrapperElement.classList.add("left-menu-wrapper-closed"); // add close class
+            rightMenuWrapperElement.classList.add("right-menu-wrapper-open"); // add open class
+            rightMenuWrapperElement.classList.remove("right-menu-wrapper-closed"); // remove close class
+
+            // Style content columns grid
+            contentColumnsGridElement.classList.add("content-columns-grid-right"); // add right menu class
+            contentColumnsGridElement.classList.remove("content-columns-grid-left"); // remove left menu class
+            contentColumnsGridElement.classList.remove("content-columns-grid"); // remove default class
+
+            // Style menu buttons
+            leftMenuButtonElement.classList.add("left-menu-button-closed"); // add styling for when the left menu is closed
+            leftMenuButtonElement.classList.remove("left-menu-button-open"); // remove styling for when the left menu is open
+            rightMenuButtonElement.classList.add("right-menu-button-open");  // add styling for when the right menu is open
+            rightMenuButtonElement.classList.remove("right-menu-button-closed"); // remove styling for when the right menu is closed
+            leftMenuButtonScrollableElement.classList.add("invisible"); // hide left scrollable menu button
+            rightMenuButtonScrollableElement.classList.add("invisible"); // hide right menu button
+            darkModeScrollableElement.classList.add("invisible"); // hide right menu button
+
+            // Set visibility
+            rightMenuElement.classList.remove("invisible"); // show right menu
+            leftMenuElement.classList.add("invisible"); // hide left menu
+
+            restoreScrollPosition();
+        }
+
+        function collapseMenus() {
+            saveScrollPosition();
+
+            // Style menu wrappers
+            leftMenuWrapperElement.classList.remove("left-menu-wrapper-open"); // remove open class
+            leftMenuWrapperElement.classList.add("left-menu-wrapper-closed"); // add close class
+            rightMenuWrapperElement.classList.remove("right-menu-wrapper-open"); // remove open class
+            rightMenuWrapperElement.classList.add("right-menu-wrapper-closed"); // add close class
+
+            // Style menu columns grid
+            contentColumnsGridElement.classList.add("content-columns-grid"); // add default class
+            contentColumnsGridElement.classList.remove("content-columns-grid-right"); // remove right menu class
+            contentColumnsGridElement.classList.remove("content-columns-grid-left"); // remove left menu class
+
+            // Style menu buttons
+            leftMenuButtonElement.classList.add("left-menu-button-closed"); // add styling for when the left menu is closed
+            leftMenuButtonElement.classList.remove("left-menu-button-open"); // remove styling for when left menu is open
+            rightMenuButtonElement.classList.add("right-menu-button-closed"); // add styling for when the right menu is closed
+            rightMenuButtonElement.classList.remove("right-menu-button-open"); // remove styling for when the right menu is open
+            leftMenuButtonScrollableElement.classList.remove("invisible"); // show left menu button
+            rightMenuButtonScrollableElement.classList.remove("invisible"); // show right menu button
+            darkModeScrollableElement.classList.remove("invisible"); // show right menu button
+
+            // Set visibility
+            leftMenuElement.classList.add("invisible"); // hide left menu
+            rightMenuElement.classList.add("invisible"); // hide right menu
+
+            restoreScrollPosition();
+        }
+
+        function toggleLeftMenu() {
+            if (!contentColumnsGridElement.classList.contains("content-columns-grid-left")) {
+                showLeftMenu();
+            } else {
+                collapseMenus();
+            }
+        }
+
+        function toggleRightMenu() {
+            if (!contentColumnsGridElement.classList.contains("content-columns-grid-right")) {
+                showRightMenu();
+            } else {
+                collapseMenus();
+            }
+        }
+
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            //saveSettingsCookie();
+            applyDarkMode();
+        }
+
+        function applyDarkMode() {
+            if (isDarkMode) {
+                document.documentElement.style.setProperty('--invert-images', '0.88');
+                document.documentElement.style.setProperty('--invert-dark-images', '0');
+                document.documentElement.style.setProperty('--color-text', '#c9c9c9');
+                document.documentElement.style.setProperty('--color-background', '#222222');
+                document.documentElement.style.setProperty('--color-background-alt', '#4a4a4a');
+                document.documentElement.style.setProperty('--color-background-alt2', '#888');
+                document.documentElement.style.setProperty('--color-highlight', '#FFF');
+                document.documentElement.style.setProperty('--color-fade', '#c9c9c9');
+                document.documentElement.style.setProperty('--color-link', '#63cbff');
+                document.documentElement.style.setProperty('--color-link-visited', '#b96dff');
+                document.documentElement.style.setProperty('--color-link-active', '#ff8484');
+            } else {
+                document.documentElement.style.setProperty('--invert-images', '0');
+                document.documentElement.style.setProperty('--invert-dark-images', '0.88');
+                document.documentElement.style.setProperty('--color-text', '#222222');
+                document.documentElement.style.setProperty('--color-background', '#FFF');
+                document.documentElement.style.setProperty('--color-background-alt', '#ddd');
+                document.documentElement.style.setProperty('--color-background-alt2', '#888');
+                document.documentElement.style.setProperty('--color-highlight', '#000');
+                document.documentElement.style.setProperty('--color-fade', '#555');
+                document.documentElement.style.setProperty('--color-link', '#00F');
+                document.documentElement.style.setProperty('--color-link-visited', '#551A8B');
+                document.documentElement.style.setProperty('--color-link-active', '#F00');
+            }
+        }
+    </script>
+
+
+    <script>
+        //var entries = {{ entries | tojson }};
+        //console.log(data.name);
+    </script>
+
+</body>
+
+</html>

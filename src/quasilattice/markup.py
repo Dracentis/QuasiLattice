@@ -15,15 +15,7 @@ import quasilattice.database
 
 MARKDOWN_FLAVORS = ["commonmark", "pandoc", "gfm"]
 
-ALLOWED_TAGS = nh3.ALLOWED_TAGS | {
-    "div",
-    "span",
-    "p",
-    "br",
-    "hr",
-    "blockquote",
-    "pre",
-    "code",
+ALLOWED_HTML_TAGS = nh3.ALLOWED_TAGS | {
     "table",
     "thead",
     "tbody",
@@ -31,38 +23,27 @@ ALLOWED_TAGS = nh3.ALLOWED_TAGS | {
     "tr",
     "th",
     "td",
-    "sup",
-    "sub",
+    "video",
+    "audio",
+    "source",
+    "track",
+    "picture",
+    "input",
 }
 
-ALLOWED_ATTRIBUTES = copy.deepcopy(nh3.ALLOWED_ATTRIBUTES)
-for tag in (
-    "div",
-    "span",
-    "p",
-    "blockquote",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "li",
-    "td",
-    "th",
-    "strong",
-    "em",
-    "b",
-    "i",
-    "u",
-    "code",
-    "pre",
-):
-    ALLOWED_ATTRIBUTES.setdefault(tag, set()).add("style")
-for tag in ALLOWED_ATTRIBUTES:
-    ALLOWED_ATTRIBUTES.setdefault(tag, set()).add("style")
+ALLOWED_HTML_ATTRIBUTES = copy.deepcopy(nh3.ALLOWED_ATTRIBUTES)
+ALLOWED_HTML_ATTRIBUTES.setdefault("*", set()).update(
+    {"class", "id", "style", "title", "lang", "dir"}
+)
+ALLOWED_HTML_ATTRIBUTES["a"].update({"target"})
+ALLOWED_HTML_ATTRIBUTES["img"].update({"srcset", "sizes", "loading", "decoding"})
+ALLOWED_HTML_ATTRIBUTES["video"] = {"src", "controls", "poster", "width", "height", "preload"}
+ALLOWED_HTML_ATTRIBUTES["audio"] = {"src", "controls", "preload"}
+ALLOWED_HTML_ATTRIBUTES["source"] = {"src", "type", "srcset", "media"}
+ALLOWED_HTML_ATTRIBUTES["track"] = {"src", "kind", "srclang", "label"}
+ALLOWED_HTML_ATTRIBUTES["input"] = {"type", "checked", "disabled"}
 
-ALLOWED_STYLE_PROPERTIES = {
+ALLOWED_HTML_STYLE_PROPERTIES = {
     "color",
     "background-color",
     "font-family",
@@ -73,6 +54,7 @@ ALLOWED_STYLE_PROPERTIES = {
     "text-align",
     "line-height",
     "letter-spacing",
+    "filter",
     "margin",
     "margin-top",
     "margin-right",
@@ -104,12 +86,12 @@ ALLOWED_STYLE_PROPERTIES = {
 
 logger = logging.getLogger("quasilattice")
 
-cleaner = nh3.Cleaner(
-    tags=ALLOWED_TAGS,
-    attributes=ALLOWED_ATTRIBUTES,
-    filter_style_properties=ALLOWED_STYLE_PROPERTIES,
+html_cleaner = nh3.Cleaner(
+    tags=ALLOWED_HTML_TAGS,
+    attributes=ALLOWED_HTML_ATTRIBUTES,
+    filter_style_properties=ALLOWED_HTML_STYLE_PROPERTIES,
     url_schemes=nh3.ALLOWED_URL_SCHEMES,
-    link_rel="noopener noreferrer",
+    link_rel="noopener noreferrer nofollow",
     strip_comments=False,
 )
 
@@ -124,7 +106,7 @@ def render_entry(cursor: sqlite3.Cursor, entry_dict: dict, target_markup: str = 
 
 def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
     if "content" not in entry_dict or not isinstance(entry_dict["content"], str):
-        return cleaner.clean(
+        return html_cleaner.clean(
             quasilattice.database.calculate_canonical_entry_bytes_from_dict(
                 entry_dict
             ).decode("utf-8")
@@ -143,7 +125,7 @@ def render_entry_to_html(cursor: sqlite3.Cursor, entry_dict) -> str:
 
     # html
     if entry_dict["markup_language"].lower() == "html":
-        return cleaner.clean(entry_dict["content"])
+        return html_cleaner.clean(entry_dict["content"])
 
     # markdown
     if (
@@ -170,7 +152,7 @@ def render_entry_markdown_to_html(cursor: sqlite3.Cursor, entry_dict: dict):
     md.renderer.rules["embed"] = markdown_embed_renderer(md, cursor)
 
     html_str = md.render(entry_dict["content"])
-    html_str = cleaner.clean(html_str)
+    html_str = html_cleaner.clean(html_str)
     return html_str
 
 

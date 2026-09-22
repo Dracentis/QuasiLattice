@@ -354,7 +354,7 @@ def run(
         import uvicorn
 
         uvicorn.run(
-            "quasilattice.api:app",
+            "quasilattice.http:app",
             host=config["http"]["host"],
             port=config["http"]["port"],
             log_config=None,

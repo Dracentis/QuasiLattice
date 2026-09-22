@@ -1597,6 +1597,8 @@ def _parse_entry_filter(filter: str) -> list[tuple[list[str], str, typing.Any]]:
     conditions = []
     if not filter or not filter.strip():
         return conditions
+    if "," not in filter and "=" not in filter:
+        return [("content", "contains", filter)]
     for condition_str in filter.split(","):
         if "=" in condition_str:
             key_part, value_part = condition_str.split("=", 1)
